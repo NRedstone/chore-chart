@@ -1040,6 +1040,37 @@ export default function ChoreTracker() {
     };
   }
 
+  // "Forgot PIN?" on the PIN screen. The owner, on a device signed in as the
+  // owner, confirms it's them (Google or password) and then picks a new PIN.
+  // Anywhere else it explains who can reset it. Called straight from the tap,
+  // because Google's sign-in pop-up is only allowed from one.
+  const [pinResetting, setPinResetting] = useState(false);
+  useEffect(() => {
+    if (!showPinModal) setPinResetting(false);
+  }, [showPinModal]);
+  function forgotPin() {
+    const acct = window.CCAccount;
+    if (!acct || acct.mode !== "account") {
+      setPinError("To reset a forgotten PIN, first secure this household with a sign-in (Settings needs the PIN, so ask whoever set it).");
+      return;
+    }
+    if (acct.role !== "owner" || typeof acct.confirmOwner !== "function") {
+      setPinError("Only the owner can reset the PIN. On the owner's phone or computer, open this PIN screen and tap \u201cForgot PIN?\u201d.");
+      return;
+    }
+    setPinError("");
+    acct.confirmOwner().then(
+      () => {
+        setPinResetting(true);
+        setPinModalMode("setup");
+        setPinInput("");
+        setPinConfirmInput("");
+        setPinError("");
+      },
+      (e) => setPinError((e && e.message) || "Couldn't confirm it's you. Try again.")
+    );
+  }
+
   function submitPin() {
     if (pinModalMode === "setup") {
       if (pinInput.length < 4) {
@@ -2242,7 +2273,7 @@ export default function ChoreTracker() {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <Lock size={17} color="#7B61FF" />
                 <div style={{ fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: 18, fontWeight: 700, flex: 1 }}>
-                  {pinModalMode === "setup" ? "Set up a parent PIN" : "Enter parent PIN"}
+                  {pinModalMode === "setup" ? (pinResetting ? "Choose a new PIN" : "Set up a parent PIN") : "Enter parent PIN"}
                 </div>
                 <button
                   onClick={() => {
@@ -2258,7 +2289,9 @@ export default function ChoreTracker() {
               </div>
               <div style={{ fontSize: 12.5, color: "#8A82C0", fontWeight: 600, marginBottom: 16 }}>
                 {pinModalMode === "setup"
-                  ? "This protects the Kids panel, Rewards menu, and adding/editing chores."
+                  ? pinResetting
+                    ? "It's you. Pick a new PIN; it works on every device right away."
+                    : "This protects the Kids panel, Rewards menu, and adding/editing chores."
                   : "Needed to manage kids, rewards, or chores."}
               </div>
 
@@ -2310,6 +2343,16 @@ export default function ChoreTracker() {
               >
                 {pinModalMode === "setup" ? "Set PIN" : "Unlock"}
               </button>
+              {pinModalMode !== "setup" && parentPin && (
+                <button
+                  id="cc-forgot-pin"
+                  className="cc-btn"
+                  onClick={forgotPin}
+                  style={{ display: "block", margin: "10px auto 0", border: "none", background: "none", color: "#6F66AD", fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+                >
+                  Forgot PIN?
+                </button>
+              )}
               {pinSkipAction && (
                 <button
                   className="cc-btn"

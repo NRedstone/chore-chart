@@ -30,6 +30,8 @@ Most of the app is open for kids to use freely — checking off chores, adding t
 
 The Kids, Rewards, backup and Devices tools live under **Settings** (the gear button that appears once you unlock), in the tabs **Kids**, **Rewards**, **Screen saver**, **Household** and **Devices**.
 
+**Forgot the PIN?** Tap **Forgot PIN?** on the PIN screen, on a device where the owner is signed in. Confirm it's you (Google, or your password) and choose a new one; it works on every device right away. On other devices, that link explains that only the owner can reset it. To change the PIN normally: **Settings, Household, Change PIN**.
+
 Tap the padlock to unlock. It automatically re-locks after **2 minutes of inactivity** — not a flat timer, so it won't cut you off mid-task — or tap it again to lock immediately.
 
 ## Reordering & multiple kids

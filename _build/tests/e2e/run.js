@@ -443,6 +443,65 @@ const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${la
   await dup.page.click("#cc-join-owner");
   check("K: 'Are you the owner? Sign in instead' opens the sign-in screen", await dup.page.waitForSelector("#cc-email", { timeout: 4000 }).then(() => true, () => false));
 
+
+  // ===================================================== L. "Forgot PIN?"
+  async function openPinBox(d) {
+    if (await d.page.isVisible("#cc-settings")) await d.page.click('#cc-settings button[aria-label="Close settings"]');
+    if (await d.page.isVisible('button[aria-label="Lock parent controls"]')) await d.page.click('button[aria-label="Lock parent controls"]');
+    await d.page.click('button[aria-label="Unlock parent controls"]');
+    await d.page.waitForSelector("#cc-forgot-pin");
+  }
+  // a joined device is told who can reset it
+  await openDevices(heir);
+  const kidCode = await makeLinkCode(heir);
+  const kid2 = await device("kid2");
+  await open(kid2);
+  await linkWithCode(kid2, kidCode, "Kid tablet 2");
+  await appReady(kid2);
+  await openPinBox(kid2);
+  await kid2.page.click("#cc-forgot-pin");
+  check("L: on a joined device, Forgot PIN says only the owner can reset it", await seesText(kid2, "Only the owner can reset the PIN", 3000));
+  check("L: ...and doesn't offer a sign-in there", !(await kid2.page.isVisible("#cc-reauth")) && !(await kid2.page.isVisible("#cc-google-btn")));
+  await shot(kid2, "30-forgot-pin-joined");
+  // the Google owner resets it
+  await heir.page.click('#cc-settings button[aria-label="Close settings"]');
+  await openPinBox(heir);
+  await asGoogle(heir, { uid: "g_new", email: "new@gmail.com" });
+  await heir.page.click("#cc-forgot-pin");
+  check("L: after confirming with Google, the owner gets to choose a new PIN", await seesText(heir, "Choose a new PIN", 4000));
+  await heir.page.fill('input[placeholder="PIN"]', "2468");
+  await heir.page.fill('input[placeholder="Confirm PIN"]', "2468");
+  await heir.page.click('button:has-text("Set PIN")');
+  await sleep(800);
+  check("L: the new PIN is saved for the household", be.doc("households/ABC234").parentPin === "2468");
+  check("L: and it unlocks right away", await heir.page.isVisible('button[aria-label="Lock parent controls"]'));
+  // the joined device uses the new PIN too
+  await kid2.page.fill('input[placeholder="PIN"]', "2468");
+  await kid2.page.click('button:has-text("Unlock")');
+  check("L: the new PIN works on the other devices", await kid2.page.waitForSelector('button[aria-label="Lock parent controls"]', { timeout: 4000 }).then(() => true, () => false));
+  // the Google owner cancels: nothing changes
+  await openPinBox(heir);
+  await asGoogle(heir, null);
+  await heir.page.click("#cc-forgot-pin");
+  check("L: cancelling the Google sign-in leaves the PIN alone", await seesText(heir, "Sign-in was cancelled", 3000) && be.doc("households/ABC234").parentPin === "2468");
+  await heir.page.click('button[aria-label="Close"]').catch(() => {});
+  // the email owner resets it with her password
+  await openPinBox(mom);
+  await mom.page.click("#cc-forgot-pin");
+  await mom.page.waitForSelector("#cc-reauth", { timeout: 4000 });
+  await mom.page.fill("#cc-reauth-password", "wrong-one");
+  await mom.page.click("#cc-reauth-go");
+  check("L: a wrong password doesn't reset the PIN", await seesText(mom, "Wrong email or password", 3000));
+  await mom.page.fill("#cc-reauth-password", "tacoTuesday42");
+  await mom.page.click("#cc-reauth-go");
+  check("L: with her password, the email owner gets to choose a new PIN", await seesText(mom, "Choose a new PIN", 4000));
+  await shot(mom, "31-new-pin");
+  await mom.page.fill('input[placeholder="PIN"]', "9753");
+  await mom.page.fill('input[placeholder="Confirm PIN"]', "9753");
+  await mom.page.click('button:has-text("Set PIN")');
+  await sleep(800);
+  check("L: her household's PIN is changed", be.doc("households/" + momMember.hid).parentPin === "9753");
+
   // ===================================================== J. the owner can't make a second household
   await fresh.page.click('button[aria-label="Unlock parent controls"]').catch(() => {});
 

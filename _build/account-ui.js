@@ -227,6 +227,22 @@
       setTimeout(function () { try { pw.input.focus(); } catch (e) {} }, 50);
     });
   }
+  // The owner proves it's them again: Google opens its pop-up (so this must
+  // be called straight from a tap), an email account types its password.
+  // Used by Devices (sign out others, transfer) and by "Forgot PIN?".
+  function confirmOwnerIdentity() {
+    var s = S.session;
+    var u = S.auth && S.auth.currentUser;
+    if (!s || s.mode !== "account" || s.role !== "owner" || !u) return Promise.reject({ message: "Only the owner can do that." });
+    var viaGoogle = (u.providerData || []).some(function (p) { return p && p.providerId === "google.com"; });
+    if (viaGoogle) {
+      return signInGoogle().then(function (r) {
+        if (r.user.uid !== s.user.uid) { window.location.reload(); throw { message: "That's a different Google account." }; }
+        return S.auth.currentUser.getIdToken(true);
+      });
+    }
+    return passwordAgain(u).then(function () { return S.auth.currentUser.getIdToken(true); });
+  }
   function ensureAnonymous() {
     if (S.auth.currentUser) return Promise.resolve(S.auth.currentUser);
     return S.auth.signInAnonymously().then(function (r) { return r.user; });
@@ -955,17 +971,7 @@
 
     // Some owner actions need a fresh sign-in: Google opens its pop-up
     // (straight from the tap), an email account types its password again.
-    function reauth() {
-      var u = S.auth.currentUser;
-      var viaGoogle = !!(u && (u.providerData || []).some(function (p) { return p && p.providerId === "google.com"; }));
-      if (viaGoogle) {
-        return signInGoogle().then(function (r) {
-          if (r.user.uid !== s.user.uid) { window.location.reload(); throw { message: "That's a different Google account." }; }
-          return S.auth.currentUser.getIdToken(true);
-        });
-      }
-      return passwordAgain(u).then(function () { return S.auth.currentUser.getIdToken(true); });
-    }
+    function reauth() { return confirmOwnerIdentity(); }
     function loadStatus() {
       return readStatus(s.hid).then(function (st) { uiState.status = st; render(); });
     }
@@ -1158,6 +1164,10 @@
       openDevicesModal: openDevicesModal,
       mountDevices: function (el) { return openDevicesModal(el); },
       checkAccess: checkAccess,
+      // "Forgot PIN?": only the owner's own sign-in can reset the PIN.
+      confirmOwner: function () {
+        return confirmOwnerIdentity().catch(function (e) { throw { message: friendlyError(e) }; });
+      },
     };
     if (session.mode === "account") {
       try { localStorage.setItem(SESSION_KEY, JSON.stringify({ uid: session.user.uid, hid: session.hid, role: session.role })); } catch (e) {}

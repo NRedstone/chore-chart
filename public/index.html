@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-10-08 19:08 UTC";</script>
+<script>window.__ccBuild = "2026-10-08 19:11 UTC";</script>
 
 <script>
 // ===========================================================================
@@ -257,6 +257,22 @@
       ov.card.appendChild(textLink("Cancel", function () { ov.close(); reject({ message: "Cancelled." }); }));
       setTimeout(function () { try { pw.input.focus(); } catch (e) {} }, 50);
     });
+  }
+  // The owner proves it's them again: Google opens its pop-up (so this must
+  // be called straight from a tap), an email account types its password.
+  // Used by Devices (sign out others, transfer) and by "Forgot PIN?".
+  function confirmOwnerIdentity() {
+    var s = S.session;
+    var u = S.auth && S.auth.currentUser;
+    if (!s || s.mode !== "account" || s.role !== "owner" || !u) return Promise.reject({ message: "Only the owner can do that." });
+    var viaGoogle = (u.providerData || []).some(function (p) { return p && p.providerId === "google.com"; });
+    if (viaGoogle) {
+      return signInGoogle().then(function (r) {
+        if (r.user.uid !== s.user.uid) { window.location.reload(); throw { message: "That's a different Google account." }; }
+        return S.auth.currentUser.getIdToken(true);
+      });
+    }
+    return passwordAgain(u).then(function () { return S.auth.currentUser.getIdToken(true); });
   }
   function ensureAnonymous() {
     if (S.auth.currentUser) return Promise.resolve(S.auth.currentUser);
@@ -986,17 +1002,7 @@
 
     // Some owner actions need a fresh sign-in: Google opens its pop-up
     // (straight from the tap), an email account types its password again.
-    function reauth() {
-      var u = S.auth.currentUser;
-      var viaGoogle = !!(u && (u.providerData || []).some(function (p) { return p && p.providerId === "google.com"; }));
-      if (viaGoogle) {
-        return signInGoogle().then(function (r) {
-          if (r.user.uid !== s.user.uid) { window.location.reload(); throw { message: "That's a different Google account." }; }
-          return S.auth.currentUser.getIdToken(true);
-        });
-      }
-      return passwordAgain(u).then(function () { return S.auth.currentUser.getIdToken(true); });
-    }
+    function reauth() { return confirmOwnerIdentity(); }
     function loadStatus() {
       return readStatus(s.hid).then(function (st) { uiState.status = st; render(); });
     }
@@ -1189,6 +1195,10 @@
       openDevicesModal: openDevicesModal,
       mountDevices: function (el) { return openDevicesModal(el); },
       checkAccess: checkAccess,
+      // "Forgot PIN?": only the owner's own sign-in can reset the PIN.
+      confirmOwner: function () {
+        return confirmOwnerIdentity().catch(function (e) { throw { message: friendlyError(e) }; });
+      },
     };
     if (session.mode === "account") {
       try { localStorage.setItem(SESSION_KEY, JSON.stringify({ uid: session.user.uid, hid: session.hid, role: session.role })); } catch (e) {}
@@ -2446,6 +2456,32 @@ window.__syncReady = (async () => {
         setShowPinModal(true);
       };
     }
+    const [pinResetting, setPinResetting] = useState(false);
+    useEffect(() => {
+      if (!showPinModal) setPinResetting(false);
+    }, [showPinModal]);
+    function forgotPin() {
+      const acct = window.CCAccount;
+      if (!acct || acct.mode !== "account") {
+        setPinError("To reset a forgotten PIN, first secure this household with a sign-in (Settings needs the PIN, so ask whoever set it).");
+        return;
+      }
+      if (acct.role !== "owner" || typeof acct.confirmOwner !== "function") {
+        setPinError("Only the owner can reset the PIN. On the owner's phone or computer, open this PIN screen and tap \u201CForgot PIN?\u201D.");
+        return;
+      }
+      setPinError("");
+      acct.confirmOwner().then(
+        () => {
+          setPinResetting(true);
+          setPinModalMode("setup");
+          setPinInput("");
+          setPinConfirmInput("");
+          setPinError("");
+        },
+        (e) => setPinError(e && e.message || "Couldn't confirm it's you. Try again.")
+      );
+    }
     function submitPin() {
       if (pinModalMode === "setup") {
         if (pinInput.length < 4) {
@@ -3374,7 +3410,7 @@ window.__syncReady = (async () => {
             onClick: (e) => e.stopPropagation(),
             style: { background: "#FFFFFF", borderRadius: 22, padding: 24, width: "100%", maxWidth: 320, boxShadow: "0 20px 50px rgba(43,34,80,0.3)", fontFamily: "'Nunito', -apple-system, sans-serif" }
           },
-          /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } }, /* @__PURE__ */ React.createElement(Lock, { size: 17, color: "#7B61FF" }), /* @__PURE__ */ React.createElement("div", { style: { fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: 18, fontWeight: 700, flex: 1 } }, pinModalMode === "setup" ? "Set up a parent PIN" : "Enter parent PIN"), /* @__PURE__ */ React.createElement(
+          /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } }, /* @__PURE__ */ React.createElement(Lock, { size: 17, color: "#7B61FF" }), /* @__PURE__ */ React.createElement("div", { style: { fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: 18, fontWeight: 700, flex: 1 } }, pinModalMode === "setup" ? pinResetting ? "Choose a new PIN" : "Set up a parent PIN" : "Enter parent PIN"), /* @__PURE__ */ React.createElement(
             "button",
             {
               onClick: () => {
@@ -3387,7 +3423,7 @@ window.__syncReady = (async () => {
             },
             /* @__PURE__ */ React.createElement(X, { size: 16 })
           )),
-          /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, color: "#8A82C0", fontWeight: 600, marginBottom: 16 } }, pinModalMode === "setup" ? "This protects the Kids panel, Rewards menu, and adding/editing chores." : "Needed to manage kids, rewards, or chores."),
+          /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, color: "#8A82C0", fontWeight: 600, marginBottom: 16 } }, pinModalMode === "setup" ? pinResetting ? "It's you. Pick a new PIN; it works on every device right away." : "This protects the Kids panel, Rewards menu, and adding/editing chores." : "Needed to manage kids, rewards, or chores."),
           /* @__PURE__ */ React.createElement(
             "input",
             {
@@ -3438,6 +3474,16 @@ window.__syncReady = (async () => {
               style: { width: "100%", padding: "11px 0", borderRadius: 14, border: "none", background: "linear-gradient(135deg, #FF6B9D, #7B61FF)", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: "pointer" }
             },
             pinModalMode === "setup" ? "Set PIN" : "Unlock"
+          ),
+          pinModalMode !== "setup" && parentPin && /* @__PURE__ */ React.createElement(
+            "button",
+            {
+              id: "cc-forgot-pin",
+              className: "cc-btn",
+              onClick: forgotPin,
+              style: { display: "block", margin: "10px auto 0", border: "none", background: "none", color: "#6F66AD", fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }
+            },
+            "Forgot PIN?"
           ),
           pinSkipAction && /* @__PURE__ */ React.createElement(
             "button",
