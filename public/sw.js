@@ -5,7 +5,7 @@
 // all. (This file used to never change, and the cache was cache-first, so a
 // device kept serving its first-ever copy of the page until site data was
 // cleared by hand.)
-const BUILD = "20261008-185501";
+const BUILD = "20261008-190516";
 const CACHE_NAME = "chore-chart-" + BUILD;
 
 // Pinned library versions never change at their URLs, so they can be served

@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-10-08 18:55 UTC";</script>
+<script>window.__ccBuild = "2026-10-08 19:05 UTC";</script>
 
 <script>
 // ===========================================================================
@@ -1714,7 +1714,7 @@ window.__syncReady = (async () => {
       if (e) e.preventDefault();
       const q = query.trim();
       if (q.length < 2) {
-        setMsg("Type a city or ZIP code.");
+        setMsg("Type a city, or a ZIP or postal code.");
         return;
       }
       setBusy("search");
@@ -1724,7 +1724,7 @@ window.__syncReady = (async () => {
         const res = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=" + encodeURIComponent(q));
         const data = await res.json();
         const list = data && data.results || [];
-        if (!list.length) setMsg("No places found. Try a nearby city, or a ZIP code.");
+        if (!list.length) setMsg("No places found. Try the city's name, or a nearby city.");
         setResults(list);
       } catch (err) {
         setMsg("Couldn't search right now. Check the connection and try again.");
@@ -1737,36 +1737,15 @@ window.__syncReady = (async () => {
       setQuery("");
       setMsg("");
     }
-    function useHere() {
-      if (!navigator.geolocation) {
-        setMsg("This device can't share its location. Type your city instead.");
-        return;
-      }
-      setBusy("here");
-      setMsg("");
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setBusy("");
-          onSave({ name: "Home (from a device's location)", lat: pos.coords.latitude, lon: pos.coords.longitude, units: location && location.units || unitsForThisDevice() });
-        },
-        (err) => {
-          setBusy("");
-          setMsg(
-            err && err.code === 1 ? "Location access is turned off for this site. Type your city instead." : "Couldn't get this device's location. Type your city instead."
-          );
-        },
-        { enableHighAccuracy: false, timeout: 15e3, maximumAge: 10 * 60 * 1e3 }
-      );
-    }
-    return /* @__PURE__ */ React.createElement("div", { id: "cc-weather-settings", style: { paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "Weather"), /* @__PURE__ */ React.createElement("div", { id: "cc-weather-place", style: { fontSize: 13, fontWeight: 700, color: "#2B2250", marginTop: 4 } }, location ? "Showing weather for " + location.name : "No location set, so weather is hidden."), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#8A82C0", fontWeight: 600, margin: "2px 0 10px", lineHeight: 1.5 } }, "Used on every device in this household. Only the rough area (about a kilometer) is saved."), /* @__PURE__ */ React.createElement("form", { onSubmit: search, style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { id: "cc-weather-settings", style: { paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "Weather"), /* @__PURE__ */ React.createElement("div", { id: "cc-weather-place", style: { fontSize: 13, fontWeight: 700, color: "#2B2250", marginTop: 4 } }, location ? "Showing weather for " + location.name : "No location set, so weather is hidden."), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#8A82C0", fontWeight: 600, margin: "2px 0 10px", lineHeight: 1.5 } }, "Used on every device in this household. Changing it here changes it everywhere."), /* @__PURE__ */ React.createElement("form", { onSubmit: search, style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement(
       "input",
       {
         id: "cc-weather-query",
         value: query,
         onChange: (e) => setQuery(e.target.value),
-        placeholder: "City or ZIP code",
+        placeholder: "City, or ZIP / postal code",
         autoComplete: "off",
-        "aria-label": "City or ZIP code",
+        "aria-label": "City, or ZIP or postal code",
         style: { flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 10, border: "2px solid #E2DBFA", fontSize: 15, fontWeight: 600, color: "#2B2250", fontFamily: "inherit" }
       }
     ), /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: busy === "search", style: btnStyle }, busy === "search" ? "Searching\u2026" : "Search")), results && results.length > 0 && /* @__PURE__ */ React.createElement("div", { id: "cc-weather-results", style: { marginTop: 8, display: "flex", flexDirection: "column", gap: 6 } }, results.map((r) => /* @__PURE__ */ React.createElement(
@@ -1777,7 +1756,7 @@ window.__syncReady = (async () => {
         style: { ...btnStyle, textAlign: "left", width: "100%" }
       },
       placeLabel(r)
-    ))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 } }, /* @__PURE__ */ React.createElement("button", { id: "cc-weather-here", onClick: useHere, disabled: busy === "here", style: btnStyle }, busy === "here" ? "Finding you\u2026" : "Use my current location"), location && /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 } }, location && /* @__PURE__ */ React.createElement(
       "button",
       {
         id: "cc-weather-units",
@@ -1927,15 +1906,6 @@ window.__syncReady = (async () => {
   }
   function unitsForCountry(cc) {
     return ["US", "PR", "GU", "VI", "AS", "MP", "LR", "BS", "BZ", "KY", "PW", "FM", "MH"].includes(String(cc || "").toUpperCase()) ? "F" : "C";
-  }
-  function unitsForThisDevice() {
-    try {
-      const loc = (navigator.language || "") + "";
-      const region = loc.split("-")[1];
-      return region ? unitsForCountry(region) : "F";
-    } catch (e) {
-      return "F";
-    }
   }
   function placeLabel(r) {
     const parts = [r.name];

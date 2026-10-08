@@ -170,25 +170,15 @@ const GEO = {
   await sleep(1500);
   check("'off' survives an older app version saving over it", loc() === null, JSON.stringify(loc()));
 
-  // ---- 8. "Use my current location"
-  const d3 = await device("ABC234", { permissions: ["geolocation"], geolocation: { latitude: 40.712776, longitude: -74.005974 } });
-  await d3.page.click('button[aria-label="Unlock parent controls"]');
-  await d3.page.fill('input[placeholder="PIN"]', "1234");
-  await d3.page.click('button:has-text("Unlock")');
-  await d3.page.click('button[aria-label="Settings"]');
-  await d3.page.click('#cc-settings button:has-text("Household")');
-  await d3.page.click("#cc-weather-here");
-  await sleep(900);
-  check("'Use my current location' saves this device's rough location", loc() && loc().lat === 40.71 && loc().lon === -74.01, JSON.stringify(loc()));
-  check("...and the weather comes back", await waitTheme(d3, "sunny"));
-  const d4 = await device("ABC234", { permissions: [] });
-  await d4.page.click('button[aria-label="Unlock parent controls"]');
-  await d4.page.fill('input[placeholder="PIN"]', "1234");
-  await d4.page.click('button:has-text("Unlock")');
-  await d4.page.click('button[aria-label="Settings"]');
-  await d4.page.click('#cc-settings button:has-text("Household")');
-  await d4.page.click("#cc-weather-here");
-  check("if location access is refused, it says to type the city", await d4.page.waitForSelector("#cc-weather-settings [role=alert]", { timeout: 20000 }).then(() => true, () => false));
+  // ---- 8. the app never asks for the device's location
+  check("there's no 'Use my current location' button", !(await d.page.$("text=Use my current location")));
+  check("the app never touches the device's location", await d.page.evaluate(() => !document.documentElement.innerHTML.includes("getCurrentPosition")));
+  // and a place can be set again after turning weather off
+  await d.page.fill("#cc-weather-query", "Pasadena");
+  await d.page.press("#cc-weather-query", "Enter");
+  await d.page.click('#cc-weather-results button:has-text("Pasadena, California")');
+  await sleep(800);
+  check("after turning it off, picking a place brings the weather back", loc() && loc().name === "Pasadena, California" && (await waitTheme(d, "sunny")));
 
   // ---- 9. a brand-new household starts with no weather
   const callsBefore = weatherCalls.length;
@@ -197,7 +187,7 @@ const GEO = {
   check("a brand-new household has no location", be.doc("households/NEW234") && be.doc("households/NEW234").location === null, JSON.stringify(be.doc("households/NEW234") && be.doc("households/NEW234").location));
   check("...shows no weather and asks for none", (await theme(n)) === "none" && weatherCalls.length === callsBefore);
 
-  const errs = [d, d2, d3, d4, n].flatMap((x) => x.errors);
+  const errs = [d, d2, n].flatMap((x) => x.errors);
   results.forEach((r) => console.log((r.ok ? "  ok   " : "  FAIL ") + r.name + (r.ok || !r.extra ? "" : "   [" + r.extra + "]")));
   const failed = results.filter((r) => !r.ok).length;
   console.log("\n" + results.length + " checks, " + failed + " failed; page errors: " + (errs.length ? errs.join(" | ") : "none"));

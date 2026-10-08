@@ -72,8 +72,9 @@ function DevicesTab() {
 }
 
 // Settings > Household > Weather: pick the household's weather location by
-// city or ZIP code (Open-Meteo's free place search), or from this device's
-// location once. Saved for the whole household; null turns weather off.
+// city, ZIP or postal code (Open-Meteo's free place search). Typed in by hand
+// only: the app never asks any device for its location. Saved for the whole
+// household; null turns weather off.
 function WeatherLocationSettings({ location, onSave, btnStyle }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState(null);
@@ -84,7 +85,7 @@ function WeatherLocationSettings({ location, onSave, btnStyle }) {
     if (e) e.preventDefault();
     const q = query.trim();
     if (q.length < 2) {
-      setMsg("Type a city or ZIP code.");
+      setMsg("Type a city, or a ZIP or postal code.");
       return;
     }
     setBusy("search");
@@ -94,7 +95,7 @@ function WeatherLocationSettings({ location, onSave, btnStyle }) {
       const res = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=" + encodeURIComponent(q));
       const data = await res.json();
       const list = (data && data.results) || [];
-      if (!list.length) setMsg("No places found. Try a nearby city, or a ZIP code.");
+      if (!list.length) setMsg("No places found. Try the city's name, or a nearby city.");
       setResults(list);
     } catch (err) {
       setMsg("Couldn't search right now. Check the connection and try again.");
@@ -109,30 +110,6 @@ function WeatherLocationSettings({ location, onSave, btnStyle }) {
     setMsg("");
   }
 
-  function useHere() {
-    if (!navigator.geolocation) {
-      setMsg("This device can't share its location. Type your city instead.");
-      return;
-    }
-    setBusy("here");
-    setMsg("");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setBusy("");
-        onSave({ name: "Home (from a device's location)", lat: pos.coords.latitude, lon: pos.coords.longitude, units: (location && location.units) || unitsForThisDevice() });
-      },
-      (err) => {
-        setBusy("");
-        setMsg(
-          err && err.code === 1
-            ? "Location access is turned off for this site. Type your city instead."
-            : "Couldn't get this device's location. Type your city instead."
-        );
-      },
-      { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 }
-    );
-  }
-
   return (
     <div id="cc-weather-settings" style={{ paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: "#7B61FF" }}>Weather</div>
@@ -140,16 +117,16 @@ function WeatherLocationSettings({ location, onSave, btnStyle }) {
         {location ? "Showing weather for " + location.name : "No location set, so weather is hidden."}
       </div>
       <div style={{ fontSize: 12, color: "#8A82C0", fontWeight: 600, margin: "2px 0 10px", lineHeight: 1.5 }}>
-        Used on every device in this household. Only the rough area (about a kilometer) is saved.
+        Used on every device in this household. Changing it here changes it everywhere.
       </div>
       <form onSubmit={search} style={{ display: "flex", gap: 8 }}>
         <input
           id="cc-weather-query"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="City or ZIP code"
+          placeholder="City, or ZIP / postal code"
           autoComplete="off"
-          aria-label="City or ZIP code"
+          aria-label="City, or ZIP or postal code"
           style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 10, border: "2px solid #E2DBFA", fontSize: 15, fontWeight: 600, color: "#2B2250", fontFamily: "inherit" }}
         />
         <button type="submit" disabled={busy === "search"} style={btnStyle}>
@@ -170,9 +147,6 @@ function WeatherLocationSettings({ location, onSave, btnStyle }) {
         </div>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-        <button id="cc-weather-here" onClick={useHere} disabled={busy === "here"} style={btnStyle}>
-          {busy === "here" ? "Finding you…" : "Use my current location"}
-        </button>
         {location && (
           <button
             id="cc-weather-units"
@@ -380,15 +354,6 @@ function cleanLocation(loc) {
 // Fahrenheit where people use it, Celsius everywhere else.
 function unitsForCountry(cc) {
   return ["US", "PR", "GU", "VI", "AS", "MP", "LR", "BS", "BZ", "KY", "PW", "FM", "MH"].includes(String(cc || "").toUpperCase()) ? "F" : "C";
-}
-function unitsForThisDevice() {
-  try {
-    const loc = (navigator.language || "") + "";
-    const region = loc.split("-")[1];
-    return region ? unitsForCountry(region) : "F";
-  } catch (e) {
-    return "F";
-  }
 }
 // One line per search result: "Pasadena, California" (US) or "Paris, Île-de-France, France".
 function placeLabel(r) {
