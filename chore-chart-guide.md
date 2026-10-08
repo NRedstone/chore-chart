@@ -47,5 +47,8 @@ Tap the padlock to unlock. It automatically re-locks after **2 minutes of inacti
 ## Clock screen saver
 Under **Settings, Screen saver** you can turn on a big clock that appears after 5, 10 or 30 minutes with no taps. It's set per device, so turn it on for a wall tablet and leave phones alone. Tap anywhere to come back. On an iPad, set Auto-Lock to Never so the screen stays on.
 
+## Weather
+The date card in the top corner shows the weather and takes its color: orange when sunny, gray when cloudy, blue for rain, purple-gray for storms, icy blue for snow, and midnight navy from sunset to sunrise. Set the place under **Settings, Household, Weather**: search a city or ZIP code, or tap **Use my current location** once on a phone at home. It's shared by every device in the household, so the wall tablet never has to ask for its location. **Turn weather off** hides it, and the card goes back to pink and purple. There's a °F / °C switch there too.
+
 ## If something looks stuck
 If changes don't seem to be saving, a red banner will appear at the top. It usually resolves on its own — if it persists, try reloading the page.

@@ -71,6 +71,129 @@ function DevicesTab() {
   return <div id="cc-devices" ref={hostRef} />;
 }
 
+// Settings > Household > Weather: pick the household's weather location by
+// city or ZIP code (Open-Meteo's free place search), or from this device's
+// location once. Saved for the whole household; null turns weather off.
+function WeatherLocationSettings({ location, onSave, btnStyle }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+
+  async function search(e) {
+    if (e) e.preventDefault();
+    const q = query.trim();
+    if (q.length < 2) {
+      setMsg("Type a city or ZIP code.");
+      return;
+    }
+    setBusy("search");
+    setMsg("");
+    setResults(null);
+    try {
+      const res = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=" + encodeURIComponent(q));
+      const data = await res.json();
+      const list = (data && data.results) || [];
+      if (!list.length) setMsg("No places found. Try a nearby city, or a ZIP code.");
+      setResults(list);
+    } catch (err) {
+      setMsg("Couldn't search right now. Check the connection and try again.");
+    }
+    setBusy("");
+  }
+
+  function pick(r) {
+    onSave({ name: placeLabel(r), lat: r.latitude, lon: r.longitude, units: unitsForCountry(r.country_code) });
+    setResults(null);
+    setQuery("");
+    setMsg("");
+  }
+
+  function useHere() {
+    if (!navigator.geolocation) {
+      setMsg("This device can't share its location. Type your city instead.");
+      return;
+    }
+    setBusy("here");
+    setMsg("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setBusy("");
+        onSave({ name: "Home (from a device's location)", lat: pos.coords.latitude, lon: pos.coords.longitude, units: (location && location.units) || unitsForThisDevice() });
+      },
+      (err) => {
+        setBusy("");
+        setMsg(
+          err && err.code === 1
+            ? "Location access is turned off for this site. Type your city instead."
+            : "Couldn't get this device's location. Type your city instead."
+        );
+      },
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 }
+    );
+  }
+
+  return (
+    <div id="cc-weather-settings" style={{ paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#7B61FF" }}>Weather</div>
+      <div id="cc-weather-place" style={{ fontSize: 13, fontWeight: 700, color: "#2B2250", marginTop: 4 }}>
+        {location ? "Showing weather for " + location.name : "No location set, so weather is hidden."}
+      </div>
+      <div style={{ fontSize: 12, color: "#8A82C0", fontWeight: 600, margin: "2px 0 10px", lineHeight: 1.5 }}>
+        Used on every device in this household. Only the rough area (about a kilometer) is saved.
+      </div>
+      <form onSubmit={search} style={{ display: "flex", gap: 8 }}>
+        <input
+          id="cc-weather-query"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="City or ZIP code"
+          autoComplete="off"
+          aria-label="City or ZIP code"
+          style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 10, border: "2px solid #E2DBFA", fontSize: 15, fontWeight: 600, color: "#2B2250", fontFamily: "inherit" }}
+        />
+        <button type="submit" disabled={busy === "search"} style={btnStyle}>
+          {busy === "search" ? "Searching…" : "Search"}
+        </button>
+      </form>
+      {results && results.length > 0 && (
+        <div id="cc-weather-results" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          {results.map((r) => (
+            <button
+              key={r.id || r.latitude + "," + r.longitude}
+              onClick={() => pick(r)}
+              style={{ ...btnStyle, textAlign: "left", width: "100%" }}
+            >
+              {placeLabel(r)}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+        <button id="cc-weather-here" onClick={useHere} disabled={busy === "here"} style={btnStyle}>
+          {busy === "here" ? "Finding you…" : "Use my current location"}
+        </button>
+        {location && (
+          <button
+            id="cc-weather-units"
+            onClick={() => onSave({ ...location, units: location.units === "C" ? "F" : "C" })}
+            style={btnStyle}
+            aria-label={"Switch to " + (location.units === "C" ? "Fahrenheit" : "Celsius")}
+          >
+            {location.units === "C" ? "°C (switch to °F)" : "°F (switch to °C)"}
+          </button>
+        )}
+        {location && (
+          <button id="cc-weather-off" onClick={() => onSave(null)} style={btnStyle}>
+            Turn weather off
+          </button>
+        )}
+      </div>
+      {msg && <div role="alert" style={{ marginTop: 8, fontSize: 12.5, color: "#C0392B", fontWeight: 700 }}>{msg}</div>}
+    </div>
+  );
+}
+
 // --- backup helpers (pure functions, unit-tested separately) ---
 const BACKUP_APP_ID = "the-chore-chart";
 const BACKUP_VERSION = 1;
@@ -228,6 +351,74 @@ function weatherIconFor(code, isDay) {
   if ((code >= 71 && code <= 77) || code === 85 || code === 86) return CloudSnow;
   if (code >= 95) return CloudLightning;
   return Cloud;
+}
+
+// ---- Weather: where, and what color the date card turns ----
+// The household's weather location lives with the household's data, so every
+// device shows the same place. null = none set: no weather is shown at all.
+// Households from before this setting existed were always shown Los Angeles,
+// so they start there (nothing changes for them until someone picks a place).
+const LEGACY_LOCATION = { name: "Los Angeles, California", lat: 34.05, lon: -118.24, units: "F" };
+const LOCATION_CACHE_KEY = "cc-location-cache";
+
+// Only the rough spot is ever kept: two decimals is about a kilometer.
+function roundCoord(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+function cleanLocation(loc) {
+  if (!loc || typeof loc !== "object") return null;
+  const lat = Number(loc.lat);
+  const lon = Number(loc.lon);
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return {
+    name: String(loc.name || "Your location").slice(0, 80),
+    lat: roundCoord(lat),
+    lon: roundCoord(lon),
+    units: loc.units === "C" ? "C" : "F",
+  };
+}
+// Fahrenheit where people use it, Celsius everywhere else.
+function unitsForCountry(cc) {
+  return ["US", "PR", "GU", "VI", "AS", "MP", "LR", "BS", "BZ", "KY", "PW", "FM", "MH"].includes(String(cc || "").toUpperCase()) ? "F" : "C";
+}
+function unitsForThisDevice() {
+  try {
+    const loc = (navigator.language || "") + "";
+    const region = loc.split("-")[1];
+    return region ? unitsForCountry(region) : "F";
+  } catch (e) {
+    return "F";
+  }
+}
+// One line per search result: "Pasadena, California" (US) or "Paris, Île-de-France, France".
+function placeLabel(r) {
+  const parts = [r.name];
+  if (r.admin1 && r.admin1 !== r.name) parts.push(r.admin1);
+  if (r.country && String(r.country_code || "").toUpperCase() !== "US") parts.push(r.country);
+  return parts.join(", ");
+}
+
+// The date card's colors for each kind of weather. Snow is a light card, so its text is dark.
+const WEATHER_THEMES = {
+  none: { bg: "linear-gradient(135deg, #FF6B9D, #7B61FF)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(123,97,255,0.35)", rule: "rgba(255,255,255,0.3)" },
+  sunny: { bg: "linear-gradient(135deg, #F7A21B, #E35D12)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(200,80,10,0.35)", rule: "rgba(255,255,255,0.35)" },
+  cloudy: { bg: "linear-gradient(135deg, #8C98AE, #57637C)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(40,50,70,0.3)", rule: "rgba(255,255,255,0.3)" },
+  rain: { bg: "linear-gradient(135deg, #3E95DA, #2253B5)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(30,70,160,0.35)", rule: "rgba(255,255,255,0.3)" },
+  storm: { bg: "linear-gradient(135deg, #6A5C93, #312A4D)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(40,30,80,0.4)", rule: "rgba(255,255,255,0.3)" },
+  snow: { bg: "linear-gradient(135deg, #E4F2FC, #A9D2F0)", fg: "#1C3554", shadow: "0 4px 14px rgba(60,110,160,0.3)", rule: "rgba(28,53,84,0.25)" },
+  night: { bg: "linear-gradient(135deg, #24325A, #0B1022)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(5,10,30,0.45)", rule: "rgba(255,255,255,0.25)" },
+};
+// Which colors to use: night from sunset to sunrise whatever the weather,
+// otherwise by Open-Meteo's weather code. No weather = the usual pink-purple.
+function weatherThemeKey(weather) {
+  if (!weather) return "none";
+  if (!weather.isDay) return "night";
+  const code = weather.code;
+  if (code === 0 || code === 1 || code === 2) return "sunny";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "rain";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
+  if (code >= 95) return "storm";
+  return "cloudy";
 }
 
 // Quick-fill shortcuts for the day picker — clicking one just fills in the
@@ -428,7 +619,22 @@ export default function ChoreTracker() {
   // TEMP: seeded with sample data so the widget is visible here — this preview's
   // sandbox blocks the real fetch below. Once deployed for real, the fetch
   // succeeds and immediately overwrites this with live data automatically.
-  const [weather, setWeather] = useState({ temp: 72, code: 0, isDay: true });
+  // Current weather for the household's location, or null (none set, or not loaded yet).
+  const [weather, setWeather] = useState(null);
+  // The household's weather location (see cleanLocation). undefined = still loading.
+  const [location, setLocationState] = useState(undefined);
+  const locationRef = useRef(undefined);
+  // True when the saved data came back WITHOUT a location field at all, which
+  // means an older copy of the app saved over it. We put it back.
+  const locationMissingRef = useRef(false);
+  const [locationFixTick, setLocationFixTick] = useState(0);
+  function rememberLocation(loc) {
+    locationRef.current = loc;
+    setLocationState(loc);
+    try {
+      localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(loc));
+    } catch (e) {}
+  }
   const [fireworks, setFireworks] = useState(null); // array of particles | null
 
   const FIREWORK_COLORS = ["#FF6B9D", "#7B61FF", "#FFB03D", "#4ECB71", "#22B8A0"];
@@ -465,29 +671,41 @@ export default function ChoreTracker() {
     return () => clearInterval(timer);
   }, []);
 
-  // Weather is a small experiment — fetch on load, then quietly refresh every
-  // 20 minutes. Coordinates default to Los Angeles; swap them for the
-  // tablet's actual location if this sticks around.
+  // Weather for the household's location: fetched when the location is set
+  // or changed, then quietly refreshed every 20 minutes. No location, no weather.
+  const weatherKey = location ? location.lat + "," + location.lon + "," + location.units : "";
   useEffect(() => {
-    const LAT = 34.0522;
-    const LON = -118.2437;
+    if (!location) {
+      setWeather(null);
+      window.__ccRefreshWeather = null;
+      return;
+    }
+    let cancelled = false;
+    const loc = location;
     async function fetchWeather() {
       try {
         const res = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit`
+          `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code,is_day` +
+            (loc.units === "C" ? "" : "&temperature_unit=fahrenheit")
         );
         const data = await res.json();
-        if (data && data.current) {
+        if (!cancelled && data && data.current) {
           setWeather({ temp: Math.round(data.current.temperature_2m), code: data.current.weather_code, isDay: data.current.is_day === 1 });
         }
       } catch (e) {
-        // Weather is non-essential — fail silently and just hide the widget.
+        // Weather is non-essential: on a failed check, keep whatever we last had.
       }
     }
+    setWeather(null); // a new place: don't show the old place's weather meanwhile
     fetchWeather();
+    window.__ccRefreshWeather = fetchWeather; // for tests
     const timer = setInterval(fetchWeather, 20 * 60 * 1000);
-    return () => clearInterval(timer);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weatherKey]);
 
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
@@ -611,6 +829,23 @@ export default function ChoreTracker() {
     setRewardsMenu(parsed.rewardsMenu || REWARD_MENU_STARTER);
     setParentPin(parsed.parentPin !== undefined ? parsed.parentPin : null);
     setDailyPointValue(typeof parsed.dailyPointValue === "number" ? parsed.dailyPointValue : 1);
+    if (Object.prototype.hasOwnProperty.call(parsed, "location")) {
+      locationMissingRef.current = false;
+      rememberLocation(cleanLocation(parsed.location));
+    } else {
+      // No location field at all: either a household from before this setting
+      // (it was always shown Los Angeles), or an older copy of the app just
+      // saved over it. Use what this device last knew, else Los Angeles, and save it back.
+      let known;
+      try {
+        const cached = localStorage.getItem(LOCATION_CACHE_KEY);
+        if (cached !== null) known = cleanLocation(JSON.parse(cached));
+      } catch (e) {}
+      if (known === undefined) known = LEGACY_LOCATION;
+      locationMissingRef.current = true;
+      rememberLocation(known);
+      setLocationFixTick((t) => t + 1);
+    }
   }
 
   useEffect(() => {
@@ -686,6 +921,7 @@ export default function ChoreTracker() {
             setRewardsMenu(REWARD_MENU_STARTER);
             setParentPin(null);
           }
+          rememberLocation(null); // a brand-new household: no weather until a place is chosen
         }
       } catch (e) {
         // A real failure (network, quota, permissions, anything) must never
@@ -712,6 +948,20 @@ export default function ChoreTracker() {
     }
   }, []);
 
+  // Put the location back if an older copy of the app saved over it.
+  useEffect(() => {
+    if (loading || !locationMissingRef.current) return;
+    locationMissingRef.current = false;
+    persist();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, locationFixTick]);
+
+  // Settings > Household > Weather.
+  function saveLocation(loc) {
+    rememberLocation(loc ? cleanLocation(loc) : null);
+    persist();
+  }
+
   const pendingWriteTimerRef = useRef(null);
   const pendingPayloadRef = useRef(null);
 
@@ -736,6 +986,7 @@ export default function ChoreTracker() {
       rewardsMenu: useRewardsMenu,
       parentPin: useParentPin,
       dailyPointValue: useDailyPointValue,
+      location: locationRef.current === undefined ? null : locationRef.current,
     });
 
     // Local state above is already updated, so the UI feels instant either
@@ -1767,35 +2018,55 @@ export default function ChoreTracker() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto", flexShrink: 0 }}>
-            <div
-              style={{
-                background: "linear-gradient(135deg, #FF6B9D, #7B61FF)",
-                color: "#fff",
-                textAlign: "right",
-                padding: "clamp(7px, 2vw, 10px) clamp(12px, 3.6vw, 24px)",
-                borderRadius: "clamp(14px, 3.6vw, 18px)",
-                whiteSpace: "nowrap",
-                boxShadow: "0 4px 14px rgba(123,97,255,0.35)",
-              }}
-            >
-              <div style={{ fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: "clamp(17px, 4.8vw, 23px)", fontWeight: 800, lineHeight: 1.05 }}>
-                {now.toLocaleDateString(undefined, { weekday: "long" })}
-              </div>
-              <div style={{ fontSize: "clamp(13px, 3.6vw, 17px)", fontWeight: 700, opacity: 0.9, lineHeight: 1.1 }}>
-                {now.toLocaleDateString(undefined, { month: "long", day: "numeric" })}
-              </div>
-              {weather && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: "clamp(11px, 3vw, 13px)", fontWeight: 700, opacity: 0.9, marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.3)" }}>
-                  {(() => {
-                    const WeatherIcon = weatherIconFor(weather.code, weather.isDay);
-                    return <WeatherIcon size={14} color="#fff" />;
-                  })()}
-                  {weather.temp}°
-                  <span style={{ opacity: 0.7 }}>·</span>
-                  {now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+            {(() => {
+              // The date card takes the weather's colors. Every color is drawn as its
+              // own layer and only the current one is visible, so a change fades
+              // smoothly instead of snapping (gradients can't be animated directly).
+              const themeKey = weatherThemeKey(weather);
+              const theme = WEATHER_THEMES[themeKey];
+              return (
+                <div
+                  id="cc-date-card"
+                  data-weather={themeKey}
+                  style={{
+                    position: "relative",
+                    overflow: "hidden",
+                    color: theme.fg,
+                    textAlign: "right",
+                    padding: "clamp(7px, 2vw, 10px) clamp(12px, 3.6vw, 24px)",
+                    borderRadius: "clamp(14px, 3.6vw, 18px)",
+                    whiteSpace: "nowrap",
+                    boxShadow: theme.shadow,
+                    transition: "color 2s ease, box-shadow 2s ease",
+                  }}
+                >
+                  {Object.keys(WEATHER_THEMES).map((k) => (
+                    <div key={k} aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: WEATHER_THEMES[k].bg, opacity: k === themeKey ? 1 : 0, transition: "opacity 2s ease" }} />
+                  ))}
+                  <div style={{ position: "relative" }}>
+                    <div style={{ fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: "clamp(17px, 4.8vw, 23px)", fontWeight: 800, lineHeight: 1.05 }}>
+                      {now.toLocaleDateString(undefined, { weekday: "long" })}
+                    </div>
+                    <div style={{ fontSize: "clamp(13px, 3.6vw, 17px)", fontWeight: 700, opacity: 0.9, lineHeight: 1.1 }}>
+                      {now.toLocaleDateString(undefined, { month: "long", day: "numeric" })}
+                    </div>
+                    <div id="cc-date-card-line" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: "clamp(11px, 3vw, 13px)", fontWeight: 700, opacity: 0.9, marginTop: 4, paddingTop: 4, borderTop: "1px solid " + theme.rule, transition: "border-color 2s ease" }}>
+                      {weather && (
+                        <>
+                          {(() => {
+                            const WeatherIcon = weatherIconFor(weather.code, weather.isDay);
+                            return <WeatherIcon size={14} color={theme.fg} />;
+                          })()}
+                          <span id="cc-weather-temp">{weather.temp}°</span>
+                          <span style={{ opacity: 0.7 }}>·</span>
+                        </>
+                      )}
+                      {now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -2469,6 +2740,7 @@ export default function ChoreTracker() {
 
               {settingsTab === "household" && (
                 <>
+                  <WeatherLocationSettings location={location} onSave={saveLocation} btnStyle={BACKUP_BTN_STYLE} />
                   <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" }}>
                     <div style={{ flex: 1, minWidth: 160 }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#7B61FF" }}>App version</div>

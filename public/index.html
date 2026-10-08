@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-10-08 18:29 UTC";</script>
+<script>window.__ccBuild = "2026-10-08 18:55 UTC";</script>
 
 <script>
 // ===========================================================================
@@ -1705,6 +1705,89 @@ window.__syncReady = (async () => {
     }, []);
     return /* @__PURE__ */ React.createElement("div", { id: "cc-devices", ref: hostRef });
   }
+  function WeatherLocationSettings({ location, onSave, btnStyle }) {
+    const [query, setQuery] = useState("");
+    const [results, setResults] = useState(null);
+    const [busy, setBusy] = useState("");
+    const [msg, setMsg] = useState("");
+    async function search(e) {
+      if (e) e.preventDefault();
+      const q = query.trim();
+      if (q.length < 2) {
+        setMsg("Type a city or ZIP code.");
+        return;
+      }
+      setBusy("search");
+      setMsg("");
+      setResults(null);
+      try {
+        const res = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=" + encodeURIComponent(q));
+        const data = await res.json();
+        const list = data && data.results || [];
+        if (!list.length) setMsg("No places found. Try a nearby city, or a ZIP code.");
+        setResults(list);
+      } catch (err) {
+        setMsg("Couldn't search right now. Check the connection and try again.");
+      }
+      setBusy("");
+    }
+    function pick(r) {
+      onSave({ name: placeLabel(r), lat: r.latitude, lon: r.longitude, units: unitsForCountry(r.country_code) });
+      setResults(null);
+      setQuery("");
+      setMsg("");
+    }
+    function useHere() {
+      if (!navigator.geolocation) {
+        setMsg("This device can't share its location. Type your city instead.");
+        return;
+      }
+      setBusy("here");
+      setMsg("");
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setBusy("");
+          onSave({ name: "Home (from a device's location)", lat: pos.coords.latitude, lon: pos.coords.longitude, units: location && location.units || unitsForThisDevice() });
+        },
+        (err) => {
+          setBusy("");
+          setMsg(
+            err && err.code === 1 ? "Location access is turned off for this site. Type your city instead." : "Couldn't get this device's location. Type your city instead."
+          );
+        },
+        { enableHighAccuracy: false, timeout: 15e3, maximumAge: 10 * 60 * 1e3 }
+      );
+    }
+    return /* @__PURE__ */ React.createElement("div", { id: "cc-weather-settings", style: { paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "Weather"), /* @__PURE__ */ React.createElement("div", { id: "cc-weather-place", style: { fontSize: 13, fontWeight: 700, color: "#2B2250", marginTop: 4 } }, location ? "Showing weather for " + location.name : "No location set, so weather is hidden."), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#8A82C0", fontWeight: 600, margin: "2px 0 10px", lineHeight: 1.5 } }, "Used on every device in this household. Only the rough area (about a kilometer) is saved."), /* @__PURE__ */ React.createElement("form", { onSubmit: search, style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        id: "cc-weather-query",
+        value: query,
+        onChange: (e) => setQuery(e.target.value),
+        placeholder: "City or ZIP code",
+        autoComplete: "off",
+        "aria-label": "City or ZIP code",
+        style: { flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 10, border: "2px solid #E2DBFA", fontSize: 15, fontWeight: 600, color: "#2B2250", fontFamily: "inherit" }
+      }
+    ), /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: busy === "search", style: btnStyle }, busy === "search" ? "Searching\u2026" : "Search")), results && results.length > 0 && /* @__PURE__ */ React.createElement("div", { id: "cc-weather-results", style: { marginTop: 8, display: "flex", flexDirection: "column", gap: 6 } }, results.map((r) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: r.id || r.latitude + "," + r.longitude,
+        onClick: () => pick(r),
+        style: { ...btnStyle, textAlign: "left", width: "100%" }
+      },
+      placeLabel(r)
+    ))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 } }, /* @__PURE__ */ React.createElement("button", { id: "cc-weather-here", onClick: useHere, disabled: busy === "here", style: btnStyle }, busy === "here" ? "Finding you\u2026" : "Use my current location"), location && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        id: "cc-weather-units",
+        onClick: () => onSave({ ...location, units: location.units === "C" ? "F" : "C" }),
+        style: btnStyle,
+        "aria-label": "Switch to " + (location.units === "C" ? "Fahrenheit" : "Celsius")
+      },
+      location.units === "C" ? "\xB0C (switch to \xB0F)" : "\xB0F (switch to \xB0C)"
+    ), location && /* @__PURE__ */ React.createElement("button", { id: "cc-weather-off", onClick: () => onSave(null), style: btnStyle }, "Turn weather off")), msg && /* @__PURE__ */ React.createElement("div", { role: "alert", style: { marginTop: 8, fontSize: 12.5, color: "#C0392B", fontWeight: 700 } }, msg));
+  }
   const BACKUP_APP_ID = "the-chore-chart";
   const BACKUP_VERSION = 1;
   function makeBackup(state, buildLabel) {
@@ -1824,6 +1907,60 @@ window.__syncReady = (async () => {
     if (code >= 71 && code <= 77 || code === 85 || code === 86) return CloudSnow;
     if (code >= 95) return CloudLightning;
     return Cloud;
+  }
+  const LEGACY_LOCATION = { name: "Los Angeles, California", lat: 34.05, lon: -118.24, units: "F" };
+  const LOCATION_CACHE_KEY = "cc-location-cache";
+  function roundCoord(n) {
+    return Math.round(Number(n) * 100) / 100;
+  }
+  function cleanLocation(loc) {
+    if (!loc || typeof loc !== "object") return null;
+    const lat = Number(loc.lat);
+    const lon = Number(loc.lon);
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return {
+      name: String(loc.name || "Your location").slice(0, 80),
+      lat: roundCoord(lat),
+      lon: roundCoord(lon),
+      units: loc.units === "C" ? "C" : "F"
+    };
+  }
+  function unitsForCountry(cc) {
+    return ["US", "PR", "GU", "VI", "AS", "MP", "LR", "BS", "BZ", "KY", "PW", "FM", "MH"].includes(String(cc || "").toUpperCase()) ? "F" : "C";
+  }
+  function unitsForThisDevice() {
+    try {
+      const loc = (navigator.language || "") + "";
+      const region = loc.split("-")[1];
+      return region ? unitsForCountry(region) : "F";
+    } catch (e) {
+      return "F";
+    }
+  }
+  function placeLabel(r) {
+    const parts = [r.name];
+    if (r.admin1 && r.admin1 !== r.name) parts.push(r.admin1);
+    if (r.country && String(r.country_code || "").toUpperCase() !== "US") parts.push(r.country);
+    return parts.join(", ");
+  }
+  const WEATHER_THEMES = {
+    none: { bg: "linear-gradient(135deg, #FF6B9D, #7B61FF)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(123,97,255,0.35)", rule: "rgba(255,255,255,0.3)" },
+    sunny: { bg: "linear-gradient(135deg, #F7A21B, #E35D12)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(200,80,10,0.35)", rule: "rgba(255,255,255,0.35)" },
+    cloudy: { bg: "linear-gradient(135deg, #8C98AE, #57637C)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(40,50,70,0.3)", rule: "rgba(255,255,255,0.3)" },
+    rain: { bg: "linear-gradient(135deg, #3E95DA, #2253B5)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(30,70,160,0.35)", rule: "rgba(255,255,255,0.3)" },
+    storm: { bg: "linear-gradient(135deg, #6A5C93, #312A4D)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(40,30,80,0.4)", rule: "rgba(255,255,255,0.3)" },
+    snow: { bg: "linear-gradient(135deg, #E4F2FC, #A9D2F0)", fg: "#1C3554", shadow: "0 4px 14px rgba(60,110,160,0.3)", rule: "rgba(28,53,84,0.25)" },
+    night: { bg: "linear-gradient(135deg, #24325A, #0B1022)", fg: "#FFFFFF", shadow: "0 4px 14px rgba(5,10,30,0.45)", rule: "rgba(255,255,255,0.25)" }
+  };
+  function weatherThemeKey(weather) {
+    if (!weather) return "none";
+    if (!weather.isDay) return "night";
+    const code = weather.code;
+    if (code === 0 || code === 1 || code === 2) return "sunny";
+    if (code >= 51 && code <= 67 || code >= 80 && code <= 82) return "rain";
+    if (code >= 71 && code <= 77 || code === 85 || code === 86) return "snow";
+    if (code >= 95) return "storm";
+    return "cloudy";
   }
   const DAY_PRESETS = [
     { label: "Every day", days: [0, 1, 2, 3, 4, 5, 6] },
@@ -1972,7 +2109,19 @@ window.__syncReady = (async () => {
     const [saveError, setSaveError] = useState(false);
     const [saving, setSaving] = useState(false);
     const [now, setNow] = useState(/* @__PURE__ */ new Date());
-    const [weather, setWeather] = useState({ temp: 72, code: 0, isDay: true });
+    const [weather, setWeather] = useState(null);
+    const [location, setLocationState] = useState(void 0);
+    const locationRef = useRef(void 0);
+    const locationMissingRef = useRef(false);
+    const [locationFixTick, setLocationFixTick] = useState(0);
+    function rememberLocation(loc) {
+      locationRef.current = loc;
+      setLocationState(loc);
+      try {
+        localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(loc));
+      } catch (e) {
+      }
+    }
     const [fireworks, setFireworks] = useState(null);
     const FIREWORK_COLORS = ["#FF6B9D", "#7B61FF", "#FFB03D", "#4ECB71", "#22B8A0"];
     function triggerFireworks() {
@@ -2004,25 +2153,36 @@ window.__syncReady = (async () => {
       const timer = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
       return () => clearInterval(timer);
     }, []);
+    const weatherKey = location ? location.lat + "," + location.lon + "," + location.units : "";
     useEffect(() => {
-      const LAT = 34.0522;
-      const LON = -118.2437;
+      if (!location) {
+        setWeather(null);
+        window.__ccRefreshWeather = null;
+        return;
+      }
+      let cancelled = false;
+      const loc = location;
       async function fetchWeather() {
         try {
           const res = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit`
+            `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code,is_day` + (loc.units === "C" ? "" : "&temperature_unit=fahrenheit")
           );
           const data = await res.json();
-          if (data && data.current) {
+          if (!cancelled && data && data.current) {
             setWeather({ temp: Math.round(data.current.temperature_2m), code: data.current.weather_code, isDay: data.current.is_day === 1 });
           }
         } catch (e) {
         }
       }
+      setWeather(null);
       fetchWeather();
+      window.__ccRefreshWeather = fetchWeather;
       const timer = setInterval(fetchWeather, 20 * 60 * 1e3);
-      return () => clearInterval(timer);
-    }, []);
+      return () => {
+        cancelled = true;
+        clearInterval(timer);
+      };
+    }, [weatherKey]);
     const [filter, setFilter] = useState("All");
     const [showForm, setShowForm] = useState(false);
     const [settingsTab, setSettingsTab] = useState(null);
@@ -2122,6 +2282,21 @@ window.__syncReady = (async () => {
       setRewardsMenu(parsed.rewardsMenu || REWARD_MENU_STARTER);
       setParentPin(parsed.parentPin !== void 0 ? parsed.parentPin : null);
       setDailyPointValue(typeof parsed.dailyPointValue === "number" ? parsed.dailyPointValue : 1);
+      if (Object.prototype.hasOwnProperty.call(parsed, "location")) {
+        locationMissingRef.current = false;
+        rememberLocation(cleanLocation(parsed.location));
+      } else {
+        let known;
+        try {
+          const cached = localStorage.getItem(LOCATION_CACHE_KEY);
+          if (cached !== null) known = cleanLocation(JSON.parse(cached));
+        } catch (e) {
+        }
+        if (known === void 0) known = LEGACY_LOCATION;
+        locationMissingRef.current = true;
+        rememberLocation(known);
+        setLocationFixTick((t) => t + 1);
+      }
     }
     useEffect(() => {
       (async () => {
@@ -2191,6 +2366,7 @@ window.__syncReady = (async () => {
               setRewardsMenu(REWARD_MENU_STARTER);
               setParentPin(null);
             }
+            rememberLocation(null);
           }
         } catch (e) {
           setLoadError(true);
@@ -2207,6 +2383,15 @@ window.__syncReady = (async () => {
         };
       }
     }, []);
+    useEffect(() => {
+      if (loading || !locationMissingRef.current) return;
+      locationMissingRef.current = false;
+      persist();
+    }, [loading, locationFixTick]);
+    function saveLocation(loc) {
+      rememberLocation(loc ? cleanLocation(loc) : null);
+      persist();
+    }
     const pendingWriteTimerRef = useRef(null);
     const pendingPayloadRef = useRef(null);
     async function persist(nextChores, nextKids, nextRewards, nextRewardsMenu, nextParentPin, nextDailyPointValue) {
@@ -2228,7 +2413,8 @@ window.__syncReady = (async () => {
         rewards: useRewards,
         rewardsMenu: useRewardsMenu,
         parentPin: useParentPin,
-        dailyPointValue: useDailyPointValue
+        dailyPointValue: useDailyPointValue,
+        location: locationRef.current === void 0 ? null : locationRef.current
       });
       pendingPayloadRef.current = payload;
       setSaving(true);
@@ -3001,26 +3187,33 @@ window.__syncReady = (async () => {
             marginBottom: 16
           }
         },
-        /* @__PURE__ */ React.createElement("div", { style: { maxWidth: 900, margin: "0 auto" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: "clamp(14px, 4vw, 26px)" } }, /* @__PURE__ */ React.createElement("div", { style: { minWidth: 0 } }, /* @__PURE__ */ React.createElement("h1", { style: { fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: "clamp(20px, 6vw, 30px)", fontWeight: 800, margin: 0, color: "#2B2250", lineHeight: 1.1 } }, "The Chore Chart"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: "clamp(12px, 3.4vw, 14px)", fontWeight: 700, color: "#A79ED1", marginTop: 2 } }, doneTodayCount, " of ", totalCount, " done today")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginLeft: "auto", flexShrink: 0 } }, /* @__PURE__ */ React.createElement(
-          "div",
-          {
-            style: {
-              background: "linear-gradient(135deg, #FF6B9D, #7B61FF)",
-              color: "#fff",
-              textAlign: "right",
-              padding: "clamp(7px, 2vw, 10px) clamp(12px, 3.6vw, 24px)",
-              borderRadius: "clamp(14px, 3.6vw, 18px)",
-              whiteSpace: "nowrap",
-              boxShadow: "0 4px 14px rgba(123,97,255,0.35)"
-            }
-          },
-          /* @__PURE__ */ React.createElement("div", { style: { fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: "clamp(17px, 4.8vw, 23px)", fontWeight: 800, lineHeight: 1.05 } }, now.toLocaleDateString(void 0, { weekday: "long" })),
-          /* @__PURE__ */ React.createElement("div", { style: { fontSize: "clamp(13px, 3.6vw, 17px)", fontWeight: 700, opacity: 0.9, lineHeight: 1.1 } }, now.toLocaleDateString(void 0, { month: "long", day: "numeric" })),
-          weather && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: "clamp(11px, 3vw, 13px)", fontWeight: 700, opacity: 0.9, marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.3)" } }, (() => {
-            const WeatherIcon = weatherIconFor(weather.code, weather.isDay);
-            return /* @__PURE__ */ React.createElement(WeatherIcon, { size: 14, color: "#fff" });
-          })(), weather.temp, "\xB0", /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.7 } }, "\xB7"), now.toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" }))
-        ))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 2, alignItems: "center" } }, /* @__PURE__ */ React.createElement(
+        /* @__PURE__ */ React.createElement("div", { style: { maxWidth: 900, margin: "0 auto" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: "clamp(14px, 4vw, 26px)" } }, /* @__PURE__ */ React.createElement("div", { style: { minWidth: 0 } }, /* @__PURE__ */ React.createElement("h1", { style: { fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: "clamp(20px, 6vw, 30px)", fontWeight: 800, margin: 0, color: "#2B2250", lineHeight: 1.1 } }, "The Chore Chart"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: "clamp(12px, 3.4vw, 14px)", fontWeight: 700, color: "#A79ED1", marginTop: 2 } }, doneTodayCount, " of ", totalCount, " done today")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginLeft: "auto", flexShrink: 0 } }, (() => {
+          const themeKey = weatherThemeKey(weather);
+          const theme = WEATHER_THEMES[themeKey];
+          return /* @__PURE__ */ React.createElement(
+            "div",
+            {
+              id: "cc-date-card",
+              "data-weather": themeKey,
+              style: {
+                position: "relative",
+                overflow: "hidden",
+                color: theme.fg,
+                textAlign: "right",
+                padding: "clamp(7px, 2vw, 10px) clamp(12px, 3.6vw, 24px)",
+                borderRadius: "clamp(14px, 3.6vw, 18px)",
+                whiteSpace: "nowrap",
+                boxShadow: theme.shadow,
+                transition: "color 2s ease, box-shadow 2s ease"
+              }
+            },
+            Object.keys(WEATHER_THEMES).map((k) => /* @__PURE__ */ React.createElement("div", { key: k, "aria-hidden": "true", style: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: WEATHER_THEMES[k].bg, opacity: k === themeKey ? 1 : 0, transition: "opacity 2s ease" } })),
+            /* @__PURE__ */ React.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ React.createElement("div", { style: { fontFamily: "'Baloo 2', system-ui, sans-serif", fontSize: "clamp(17px, 4.8vw, 23px)", fontWeight: 800, lineHeight: 1.05 } }, now.toLocaleDateString(void 0, { weekday: "long" })), /* @__PURE__ */ React.createElement("div", { style: { fontSize: "clamp(13px, 3.6vw, 17px)", fontWeight: 700, opacity: 0.9, lineHeight: 1.1 } }, now.toLocaleDateString(void 0, { month: "long", day: "numeric" })), /* @__PURE__ */ React.createElement("div", { id: "cc-date-card-line", style: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontSize: "clamp(11px, 3vw, 13px)", fontWeight: 700, opacity: 0.9, marginTop: 4, paddingTop: 4, borderTop: "1px solid " + theme.rule, transition: "border-color 2s ease" } }, weather && /* @__PURE__ */ React.createElement(React.Fragment, null, (() => {
+              const WeatherIcon = weatherIconFor(weather.code, weather.isDay);
+              return /* @__PURE__ */ React.createElement(WeatherIcon, { size: 14, color: theme.fg });
+            })(), /* @__PURE__ */ React.createElement("span", { id: "cc-weather-temp" }, weather.temp, "\xB0"), /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.7 } }, "\xB7")), now.toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" })))
+          );
+        })())), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 2, alignItems: "center" } }, /* @__PURE__ */ React.createElement(
           "button",
           {
             className: "cc-btn",
@@ -3603,7 +3796,7 @@ window.__syncReady = (async () => {
           "Show it now"
         )), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 16, padding: "10px 12px", borderRadius: 12, background: "#F6F3FF", fontSize: 12.5, fontWeight: 600, color: "#5D5490", lineHeight: 1.5 } }, "This setting is just for this device, so you can turn it on for a wall tablet and leave phones alone. On an iPad, set Settings, Display & Brightness, Auto-Lock to Never, or the screen will switch off before the clock appears.")),
         settingsTab === "devices" && window.CCAccount && /* @__PURE__ */ React.createElement(DevicesTab, null),
-        settingsTab === "household" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 160 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "App version"), /* @__PURE__ */ React.createElement("div", { id: "cc-version-line", style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2 } }, updateMsg || "Version " + (window.__ccBuild || "dev"))), /* @__PURE__ */ React.createElement("button", { className: "cc-btn", onClick: checkForUpdate, style: BACKUP_BTN_STYLE }, "Check for updates")), /* @__PURE__ */ React.createElement(
+        settingsTab === "household" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(WeatherLocationSettings, { location, onSave: saveLocation, btnStyle: BACKUP_BTN_STYLE }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 160 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "App version"), /* @__PURE__ */ React.createElement("div", { id: "cc-version-line", style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2 } }, updateMsg || "Version " + (window.__ccBuild || "dev"))), /* @__PURE__ */ React.createElement("button", { className: "cc-btn", onClick: checkForUpdate, style: BACKUP_BTN_STYLE }, "Check for updates")), /* @__PURE__ */ React.createElement(
           "button",
           {
             onClick: () => {
