@@ -118,6 +118,7 @@ const GEO = {
   await d.page.click('button[aria-label="Settings"]');
   await d.page.click('#cc-settings button:has-text("Household")');
   await d.page.waitForSelector("#cc-weather-settings");
+  check("Household tab has a clear Change PIN button", await d.page.isVisible("#cc-change-pin") && (await d.page.textContent("#cc-change-pin")).includes("Change PIN"));
   check("Settings shows the current place", (await d.page.textContent("#cc-weather-place")).includes("Los Angeles, California"));
   await d.page.fill("#cc-weather-query", "Nowhereville");
   await d.page.click('#cc-weather-settings button:has-text("Search")');

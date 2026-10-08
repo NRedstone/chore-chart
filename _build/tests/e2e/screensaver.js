@@ -72,7 +72,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.click('#cc-settings button:text-is("Rewards")');
   check("the Rewards tab shows the rewards menu", await page.isVisible('#cc-settings input[placeholder="New reward name"]'));
   await page.click('#cc-settings button:text-is("Household")');
-  check("the Household tab shows the PIN and backup tools", await page.isVisible('#cc-settings button:has-text("parent PIN")') && await page.isVisible('#cc-settings button:has-text("Download backup")'));
+  check("the Household tab shows the PIN and backup tools", await page.isVisible('#cc-settings #cc-change-pin') && await page.isVisible('#cc-settings button:has-text("Download backup")'));
   await page.click('#cc-settings button:text-is("Screen saver")');
   await sleep(3000);
   check("the clock doesn't start while Settings is open", !(await page.isVisible(ss)));

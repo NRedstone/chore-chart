@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-10-08 19:05 UTC";</script>
+<script>window.__ccBuild = "2026-10-08 19:08 UTC";</script>
 
 <script>
 // ===========================================================================
@@ -3766,9 +3766,11 @@ window.__syncReady = (async () => {
           "Show it now"
         )), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 16, padding: "10px 12px", borderRadius: 12, background: "#F6F3FF", fontSize: 12.5, fontWeight: 600, color: "#5D5490", lineHeight: 1.5 } }, "This setting is just for this device, so you can turn it on for a wall tablet and leave phones alone. On an iPad, set Settings, Display & Brightness, Auto-Lock to Never, or the screen will switch off before the clock appears.")),
         settingsTab === "devices" && window.CCAccount && /* @__PURE__ */ React.createElement(DevicesTab, null),
-        settingsTab === "household" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(WeatherLocationSettings, { location, onSave: saveLocation, btnStyle: BACKUP_BTN_STYLE }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 160 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "App version"), /* @__PURE__ */ React.createElement("div", { id: "cc-version-line", style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2 } }, updateMsg || "Version " + (window.__ccBuild || "dev"))), /* @__PURE__ */ React.createElement("button", { className: "cc-btn", onClick: checkForUpdate, style: BACKUP_BTN_STYLE }, "Check for updates")), /* @__PURE__ */ React.createElement(
+        settingsTab === "household" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(WeatherLocationSettings, { location, onSave: saveLocation, btnStyle: BACKUP_BTN_STYLE }), /* @__PURE__ */ React.createElement("div", { id: "cc-pin-section", style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 160 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "Parent PIN"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2, lineHeight: 1.5 } }, parentPin ? "Unlocks Settings, editing and approvals on every device." : "No PIN yet, so anyone can unlock parent controls.")), /* @__PURE__ */ React.createElement(
           "button",
           {
+            id: "cc-change-pin",
+            className: "cc-btn",
             onClick: () => {
               setPinModalMode("setup");
               setPinInput("");
@@ -3776,11 +3778,11 @@ window.__syncReady = (async () => {
               setPinError("");
               setShowPinModal(true);
             },
-            style: { marginTop: 0, border: "none", background: "none", color: "#B7ACE3", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 5 }
+            style: { ...BACKUP_BTN_STYLE, display: "flex", alignItems: "center", gap: 6 }
           },
-          /* @__PURE__ */ React.createElement(Lock, { size: 12 }),
-          parentPin ? "Change parent PIN" : "Set a parent PIN"
-        ), typeof window.migrateToFreshHousehold === "function" && /* @__PURE__ */ React.createElement(
+          /* @__PURE__ */ React.createElement(Lock, { size: 14 }),
+          parentPin ? "Change PIN" : "Set a PIN"
+        )), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 160 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "App version"), /* @__PURE__ */ React.createElement("div", { id: "cc-version-line", style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2 } }, updateMsg || "Version " + (window.__ccBuild || "dev"))), /* @__PURE__ */ React.createElement("button", { className: "cc-btn", onClick: checkForUpdate, style: BACKUP_BTN_STYLE }, "Check for updates")), typeof window.migrateToFreshHousehold === "function" && /* @__PURE__ */ React.createElement(
           "button",
           {
             onClick: () => window.migrateToFreshHousehold(),

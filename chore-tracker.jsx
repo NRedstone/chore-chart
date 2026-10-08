@@ -2706,6 +2706,29 @@ export default function ChoreTracker() {
               {settingsTab === "household" && (
                 <>
                   <WeatherLocationSettings location={location} onSave={saveLocation} btnStyle={BACKUP_BTN_STYLE} />
+                  <div id="cc-pin-section" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" }}>
+                    <div style={{ flex: 1, minWidth: 160 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#7B61FF" }}>Parent PIN</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2, lineHeight: 1.5 }}>
+                        {parentPin ? "Unlocks Settings, editing and approvals on every device." : "No PIN yet, so anyone can unlock parent controls."}
+                      </div>
+                    </div>
+                    <button
+                      id="cc-change-pin"
+                      className="cc-btn"
+                      onClick={() => {
+                        setPinModalMode("setup");
+                        setPinInput("");
+                        setPinConfirmInput("");
+                        setPinError("");
+                        setShowPinModal(true);
+                      }}
+                      style={{ ...BACKUP_BTN_STYLE, display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <Lock size={14} />
+                      {parentPin ? "Change PIN" : "Set a PIN"}
+                    </button>
+                  </div>
                   <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" }}>
                     <div style={{ flex: 1, minWidth: 160 }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#7B61FF" }}>App version</div>
@@ -2717,20 +2740,6 @@ export default function ChoreTracker() {
                       Check for updates
                     </button>
                   </div>
-            <button
-              onClick={() => {
-                setPinModalMode("setup");
-                setPinInput("");
-                setPinConfirmInput("");
-                setPinError("");
-                setShowPinModal(true);
-              }}
-              style={{ marginTop: 0, border: "none", background: "none", color: "#B7ACE3", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 5 }}
-            >
-              <Lock size={12} />
-              {parentPin ? "Change parent PIN" : "Set a parent PIN"}
-            </button>
-
             {typeof window.migrateToFreshHousehold === "function" && (
               <button
                 onClick={() => window.migrateToFreshHousehold()}
