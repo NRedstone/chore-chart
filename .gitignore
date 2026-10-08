@@ -1,0 +1,5 @@
+node_modules/
+__pycache__/
+# Build output copies at the top; the deployed copies live in public/
+/index.html
+/sw.js

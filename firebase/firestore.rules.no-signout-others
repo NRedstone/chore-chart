@@ -1,0 +1,78 @@
+rules_version = '2';
+
+// FALLBACK TRANSITION RULES — only for use if the normal ones lock the owner out.
+//
+// Identical to firestore.rules except that it does not check when the owner's
+// session signed in. Everything works the same, but "Sign out all other
+// devices" no longer cuts off other sessions of the owner's Google account
+// (removing linked devices and everything else still works).
+//
+// A household is open the old way (anyone who knows its code) only while it
+// has no owner yet, or during the 14-day window after its owner claimed it.
+// Once claimed, it's readable and writable only by its owner (signed in with
+// Google) or by a device the owner linked. When everyone has moved over,
+// switch to firestore.rules.final, which has no old-style access at all.
+//
+// The access records (who owns what, which devices are linked) are NEVER
+// writable from the app. Only the Cloud Functions change them.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function accessPath(hid) { return /databases/$(database)/documents/access/$(hid); }
+    function statusPath(hid) { return /databases/$(database)/documents/status/$(hid); }
+    function isClaimed(hid) { return exists(accessPath(hid)); }
+
+    // The owner, on a session that signed in at or after the last
+    // "sign out other devices" (auth_time is when the session first signed in
+    // and does not change as the session refreshes).
+    function isOwner(hid) {
+      return request.auth != null
+        && exists(accessPath(hid))
+        && get(accessPath(hid)).data.ownerUid == request.auth.uid;
+    }
+
+    // A device linked with a one-time code. Removing it from the list takes
+    // effect on its very next request.
+    function isLinkedDevice(hid) {
+      return request.auth != null
+        && exists(accessPath(hid))
+        && request.auth.uid in get(accessPath(hid)).data.devices;
+    }
+
+    // Old-style access: unclaimed households, or a claimed one still inside
+    // its grace window.
+    function legacyOpen(hid) {
+      return !isClaimed(hid)
+        || (get(statusPath(hid)).data.graceUntil != null
+            && request.time < get(statusPath(hid)).data.graceUntil);
+    }
+
+    match /households/{hid} {
+      allow read, write: if legacyOpen(hid) || isOwner(hid) || isLinkedDevice(hid);
+    }
+
+    match /access/{hid} {
+      allow get: if isOwner(hid) || isLinkedDevice(hid);
+      allow list, write: if false;
+    }
+
+    // Lets a signed-in person find out which household they belong to.
+    match /members/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+
+    // Public on purpose: just "is this claimed" and when the grace window ends,
+    // so an old-style device can show its "link this device" reminder.
+    match /status/{hid} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // Everything else (link codes, transfer codes, attempt counters) is
+    // reachable only by the Cloud Functions.
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

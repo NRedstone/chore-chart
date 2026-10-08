@@ -1,0 +1,6 @@
+{
+  // Must match the Worker's name in the Cloudflare dashboard exactly.
+  "name": "chore-chart-nsr",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./public" }
+}
