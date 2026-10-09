@@ -405,6 +405,8 @@
       }));
       ov.card.appendChild(spacer());
       ov.card.appendChild(linkLine("Already the owner?", "Sign in", function () { owner("signin"); }, "cc-owner-signin"));
+      var demoLink = h("a", { id: "cc-demo-link", href: "?demo", text: "Just looking? Try the demo", style: "display:block;margin-top:10px;text-align:center;font-size:13px;font-weight:700;color:#8A82C0;" });
+      ov.card.appendChild(demoLink);
     });
   }
 

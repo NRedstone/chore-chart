@@ -103,7 +103,8 @@ window.showChoreChartHelp = showHelpModal;
 
 // Resolves once this device has a way into a household and Firestore is wired
 // up. window.storage and window.subscribeToSync aren't safe to call before then.
-window.__syncReady = (async () => {
+// (Skipped entirely in demo mode, which never touches Firebase: see demo.js.)
+if (!window.__ccDemo) window.__syncReady = (async () => {
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
   const auth = firebase.auth();

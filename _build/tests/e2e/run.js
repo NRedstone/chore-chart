@@ -356,6 +356,7 @@ const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${la
   await open(mom);
   await mom.page.waitForSelector("#cc-start-btn");
   await shot(mom, "20-welcome");
+  check("K: the first screen also offers the demo", (await mom.page.getAttribute("#cc-demo-link", "href")) === "?demo");
   check("K: the first screen offers Start and Join, plus Sign in for owners",
     (await mom.page.isVisible("#cc-start-btn")) && (await mom.page.isVisible("#cc-link-btn")) && (await mom.page.isVisible("#cc-owner-signin")));
   await mom.page.click("#cc-start-btn");

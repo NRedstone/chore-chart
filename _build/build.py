@@ -55,6 +55,7 @@ def main():
     icons = read(os.path.join(HERE, "icons.jsx"))
     shim = read(os.path.join(HERE, "firestore-sync-shim.js"))
     account = read(os.path.join(HERE, "account-ui.js"))
+    demo = read(os.path.join(HERE, "demo.js"))
     sw_template = read(os.path.join(HERE, "sw.template.js"))
     register_sw = read(os.path.join(HERE, "register-sw.js"))
 
@@ -127,7 +128,7 @@ const { useState, useEffect, useMemo, useRef } = React;
         '<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>\n'
         '<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>\n\n'
         '<script>window.__ccBuild = "' + build_label + '";</script>\n\n'
-        "<script>\n" + account + "\n" + shim + "\n</script>\n\n"
+        "<script>\n" + demo + "\n" + account + "\n" + shim + "\n</script>\n\n"
         '<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>\n'
         '<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>\n\n'
         "<script>\n" + compiled + "\n</script>\n\n"

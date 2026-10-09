@@ -581,9 +581,6 @@ export default function ChoreTracker() {
   const [saveError, setSaveError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [now, setNow] = useState(new Date());
-  // TEMP: seeded with sample data so the widget is visible here — this preview's
-  // sandbox blocks the real fetch below. Once deployed for real, the fetch
-  // succeeds and immediately overwrites this with live data automatically.
   // Current weather for the household's location, or null (none set, or not loaded yet).
   const [weather, setWeather] = useState(null);
   // The household's weather location (see cleanLocation). undefined = still loading.
@@ -596,6 +593,7 @@ export default function ChoreTracker() {
   function rememberLocation(loc) {
     locationRef.current = loc;
     setLocationState(loc);
+    if (window.__ccDemo) return; // the demo family must never touch this device's real settings
     try {
       localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(loc));
     } catch (e) {}
@@ -1050,6 +1048,10 @@ export default function ChoreTracker() {
   }, [showPinModal]);
   function forgotPin() {
     const acct = window.CCAccount;
+    if (acct && acct.mode === "demo") {
+      setPinError("In the real app, the owner resets a forgotten PIN by confirming their Google or email sign-in. In this demo, the PIN is 1234.");
+      return;
+    }
     if (!acct || acct.mode !== "account") {
       setPinError("To reset a forgotten PIN, first secure this household with a sign-in (Settings needs the PIN, so ask whoever set it).");
       return;
