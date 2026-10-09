@@ -2785,16 +2785,6 @@ export default function ChoreTracker() {
                       Check for updates
                     </button>
                   </div>
-            {typeof window.migrateToFreshHousehold === "function" && (
-              <button
-                onClick={() => window.migrateToFreshHousehold()}
-                style={{ marginTop: 10, border: "none", background: "none", color: "#B7ACE3", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 5 }}
-              >
-                <Copy size={12} />
-                Migrate to a fresh household (sync troubleshooting)
-              </button>
-            )}
-
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1.5px solid #F1EDFF" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: "#7B61FF" }}>Backup</div>
               <div style={{ fontSize: 12, color: "#8A82C0", fontWeight: 600, margin: "4px 0 10px", lineHeight: 1.5 }}>

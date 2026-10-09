@@ -43,7 +43,6 @@ Tap the padlock to unlock. It automatically re-locks after **2 minutes of inacti
 - **The owner signs in with Google, or with an email and password.** An email account gets a confirmation email first; tap the link in it and the app moves on by itself. **Forgot password?** on the sign-in screen sends a reset link.
 - **Other devices, like the kids' tablet or the other parent's phone, don't need an email.** On the owner's phone: unlock, tap **Settings**, then **Devices**, then **Link a new device**. A code appears; it works once and expires in 10 minutes. On the other device, tap **Join a family's chart** and type it.
 - In **Devices** the owner can rename or remove a device (it's shut out immediately), **sign out all other devices** (for a lost phone), or **transfer ownership** to someone else's account (Google or email). The last two ask the owner to sign in again (or type their password) to confirm it's them.
-- **If you used the app before sign-in existed:** you'll see "Secure this household with a sign-in". Tap it and sign in. Your other devices keep working for 14 days while you link them with codes; **End it now** closes that window early.
 - Joined devices can use everything in the app, including parent controls with the PIN, but only the owner can add or remove devices.
 
 ## Clock screen saver

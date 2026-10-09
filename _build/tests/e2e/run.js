@@ -121,8 +121,11 @@ const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${la
 
 (async () => {
   browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--no-sandbox"] });
-  be.put("households/ABC234", SEED);          // a household that existed before accounts
-  be.put("households/XYZ789", SEED);          // another one nobody has claimed
+  // A household that already has an owner (g_owner), with some chores.
+  be.put("households/ABC234", SEED);
+  be.put("access/ABC234", { ownerUid: "g_owner", ownerEmail: "owner@gmail.com", devices: {}, linkCodes: {}, pendingTransfer: null, minAuthTime: 0, createdAt: Date.now() });
+  be.put("members/g_owner", { hid: "ABC234", role: "owner", since: Date.now() });
+  be.put("status/ABC234", { claimed: true, graceUntil: null });
 
   // ===================================================== boot decisions (pure)
   {
@@ -148,35 +151,25 @@ const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${la
         CCAcct._test.formatCode("ABCDEFGH"), CCAcct._test.cleanTypedCode(" ab-cd ef12 ", 8), CCAcct._test.cleanTypedCode("abcdefghijk", 8),
       ];
     });
-    check("boot decision table + iPad/iPhone detection", JSON.stringify(t) === JSON.stringify(["account", "needs-household", "welcome", "legacy", "legacy", "welcome", "verify-email", "needs-household", true, false, true, false, false, "ABCD-EFGH", "ABCDEF12", "ABCDEFGH"]), JSON.stringify(t));
+    check("boot decision table + iPad/iPhone detection", JSON.stringify(t) === JSON.stringify(["account", "needs-household", "welcome", "old-code", "old-code", "welcome", "verify-email", "needs-household", true, false, true, false, false, "ABCD-EFGH", "ABCDEF12", "ABCDEFGH"]), JSON.stringify(t));
     await shot(d, "01-welcome");
     await d.ctx.close();
   }
 
-  // ===================================================== A. an existing household secures itself
-  const phone = await device("phone", { legacyCode: "ABC234" });
+  // ===================================================== A. the owner signs in; old codes no longer work
+  const phone = await device("phone");
   await open(phone);
-  check("A: old-style device still opens the household", await appReady(phone));
-  check("A: it offers to secure the household", await seesText(phone, "Secure this household", 3000));
-  await shot(phone, "02-legacy-banner");
-  await asGoogle(phone, { uid: "g_owner", email: "owner@gmail.com" });
-  await phone.page.click("#cc-legacy-banner-go");
-  await phone.page.click("#cc-secure-go");
-  await phone.page.click("#cc-google-btn");
-  check("A: claiming shows the grace-period explanation", await seesText(phone, "Your household is secured"));
-  await shot(phone, "03-claimed");
-  await phone.page.click("#cc-claimed-continue");
-  check("A: app reopens signed in as the owner, data intact", await appReady(phone));
-  const acc = be.doc("access/ABC234"), st = be.doc("status/ABC234");
-  check("A: owner recorded", acc && acc.ownerUid === "g_owner" && acc.ownerEmail === "owner@gmail.com");
-  check("A: 14-day window recorded", st && st.graceUntil && Math.abs(st.graceUntil.__ts - (be.now() + 14 * 864e5)) < 60000);
+  await ownerGoogle(phone, { uid: "g_owner", email: "owner@gmail.com" });
+  check("A: the owner signs in and gets their household", await appReady(phone));
   const hh = be.doc("households/ABC234");
-  check("A: the household's kids and chores are still there", hh && hh.kids[0].name === "Jack" && hh.chores.some((c) => c.name === "Brush teeth"));
-  check("A: old code removed from the owner's device", await phone.page.evaluate(() => localStorage.getItem("choreChartHouseholdCode")) === null);
+  check("A: the household's kids and chores are there", hh && hh.kids[0].name === "Jack" && hh.chores.some((c) => c.name === "Brush teeth"));
+  const denied = await be.rpc("fs", { method: "get", path: "households/ABC234", user: null });
+  check("A: the household code alone opens nothing", denied.error && denied.error.code === "permission-denied");
+  const deniedWrite = await be.rpc("fs", { method: "set", path: "households/ZZZ999", data: { junk: true }, user: null });
+  check("A: strangers can't create households by writing to a made-up code", deniedWrite.error && deniedWrite.error.code === "permission-denied");
 
   // ===================================================== B. link the kids' tablet
   await unlock(phone); await openDevices(phone);
-  check("B: owner sees the grace-period box", await phone.page.isVisible("#cc-grace"));
   const code1 = await makeLinkCode(phone);
   await shot(phone, "04-devices-with-code");
   check("B: link code is 8 characters", /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code1), code1);
@@ -216,28 +209,16 @@ const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${la
   await shot(tablet, "06-tablet-devices");
   await tablet.page.click('#cc-settings button[aria-label="Close settings"]');
 
-  // ===================================================== C. grace period for a device that hasn't been linked
+  // ===================================================== C. a device that still has an old household code
   const oldTv = await device("oldTv", { legacyCode: "ABC234" });
   await open(oldTv);
-  check("C: unlinked old-style device still works during the window", await appReady(oldTv));
-  check("C: it shows a reminder with the deadline", await seesText(oldTv, "Link this device before", 3000));
-  await shot(oldTv, "07-grace-banner");
-
-  // owner ends the window early
-  await phone.page.click('#cc-devices button:has-text("End it now")');
-  await confirmBtn(phone, "endgrace");
-  await sleep(400);
-  check("C: ending the window clears the deadline", be.doc("status/ABC234").graceUntil === null);
-  const denied = await be.rpc("fs", { method: "get", path: "households/ABC234", user: null });
-  check("C: with no window left, the old code alone is refused", denied.error && denied.error.code === "permission-denied");
-  await open(oldTv);
-  check("C: old-style device now shows the protected screen", await seesText(oldTv, "This household is protected"));
-  await shot(oldTv, "08-protected");
-
-  // link the old device properly
+  check("C: a device with an old code is told it no longer works", await seesText(oldTv, "no longer opens a chart", 6000));
+  check("C: ...and is shown the normal ways in", await oldTv.page.isVisible("#cc-link-btn") && await oldTv.page.isVisible("#cc-start-btn"));
+  check("C: the old code is forgotten on that device", await oldTv.page.evaluate(() => localStorage.getItem("choreChartHouseholdCode")) === null);
+  await shot(oldTv, "08-old-code");
   const code2 = await makeLinkCode(phone);
   await linkWithCode(oldTv, code2, "Old TV");
-  check("C: the protected device can link and opens the household", await appReady(oldTv));
+  check("C: it can join with a code from the owner", await appReady(oldTv));
 
   // ===================================================== D. removing a device
   const removeUid = Object.keys(be.doc("access/ABC234").devices).find((u) => be.doc("access/ABC234").devices[u].name === "Old TV");
@@ -327,7 +308,7 @@ const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${la
   check("H: unlinking returns the device to the start", await seesText(tablet, "How are you getting started?", 6000));
   check("H: it is off the household's list", !(tabUid in be.doc("access/ABC234").devices));
 
-  // ===================================================== I. brand-new household, and the "older setup" join
+  // ===================================================== I. brand-new household; no old-code join
   const fresh = await device("fresh");
   await open(fresh);
   await fresh.page.waitForSelector("#cc-start-btn");
@@ -344,11 +325,9 @@ const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${la
   await open(joiner);
   await joiner.page.waitForSelector("#cc-link-btn");
   await joiner.page.click("#cc-link-btn");
-  await joiner.page.click("#cc-old-toggle");
-  await joiner.page.fill("#cc-old-code", "xyz789");
-  await joiner.page.click("#cc-old-go");
-  check("I: the older code-only join still works for an unclaimed household", await appReady(joiner));
-  check("I: and it nudges to secure the household", await seesText(joiner, "Secure this household", 3000));
+  await joiner.page.waitForSelector("#cc-link-code");
+  check("I: the Join screen no longer offers old household codes", !(await joiner.page.$("#cc-old-toggle")) && !(await joiner.page.$("#cc-old-code")));
+  check("I: no 'Secure this household' banner anywhere", !(await phone.page.$("#cc-legacy-banner")));
 
 
   // ===================================================== K. an owner who uses email and a password

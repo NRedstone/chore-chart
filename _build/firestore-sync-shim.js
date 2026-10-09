@@ -5,8 +5,7 @@
 // Every device using a household sees the same data, live, within a second or
 // two. Who is allowed in is decided by account-ui.js (Google or email sign-in for the
 // owner, one-time link codes for other devices) and enforced by the Firestore
-// security rules in firebase/firestore.rules. Households created before
-// accounts existed keep working the old way (just their code) until claimed.
+// security rules in firebase/firestore.rules.
 
 const firebaseConfig = {
   apiKey: "AIzaSyA_krjo8I-OFxJxqhQuuRV2_Revwy5oTrc",
@@ -18,38 +17,12 @@ const firebaseConfig = {
 };
 
 const HOUSEHOLD_CODE_KEY = "choreChartHouseholdCode";
-const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to read and type
-
-function generateHouseholdCode() {
-  let code = "";
-  for (let i = 0; i < 6; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
-  return code;
-}
-
 function getStoredCode() {
   try {
     return localStorage.getItem(HOUSEHOLD_CODE_KEY);
   } catch (e) {
     return null;
   }
-}
-
-function saveCode(code) {
-  try {
-    localStorage.setItem(HOUSEHOLD_CODE_KEY, code);
-  } catch (e) {
-    /* ignore — worst case, asks again next load */
-  }
-}
-
-function showCodeBadge(code) {
-  const badge = document.createElement("div");
-  badge.textContent = "Household: " + code;
-  badge.style.cssText =
-    "position:fixed;bottom:10px;right:10px;background:#2B2250;color:#F8F5FF;" +
-    "font:700 11px -apple-system,sans-serif;padding:6px 12px;border-radius:999px;" +
-    "z-index:9999;opacity:0.85;box-shadow:0 2px 8px rgba(0,0,0,0.2);";
-  document.body.appendChild(badge);
 }
 
 // A condensed how-to-use guide, as one reusable overlay — shown
@@ -129,7 +102,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
 
   const docRef = db.collection("households").doc(session.hid);
   // If the rules start refusing us, this device was removed (or the old-style
-  // grace period ended): hand over to the account code, which shows the right screen.
+  // access was cut off): hand over to the account code, which shows the right screen.
   const lost = (e) => {
     if (e && e.code === "permission-denied") CCAcct.handleAccessLost();
   };
@@ -187,93 +160,4 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     );
   };
 
-  // Old-style households only (accounts don't use a code as the key).
-  if (session.mode === "legacy") {
-    // Migration: copies the current household's data into a brand-new,
-    // never-touched document and switches this device over to it. Exists as
-    // an escape hatch for when the shared document itself gets rate-limited
-    // by Firestore (independent of daily quota) — moving the data to a fresh
-    // document sidesteps that without losing anything or starting over.
-    function showMigrateConfirm() {
-      return new Promise((resolve) => {
-        const overlay = document.createElement("div");
-        overlay.style.cssText =
-          "position:fixed;inset:0;background:rgba(43,34,80,0.45);display:flex;align-items:center;justify-content:center;z-index:99999;" +
-          "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:20px;";
-        const card = document.createElement("div");
-        card.style.cssText =
-          "background:#fff;border-radius:22px;padding:26px;max-width:360px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.3);" +
-          "text-align:center;box-sizing:border-box;";
-        card.innerHTML =
-          '<div style="font-size:17px;font-weight:800;color:#2B2250;margin-bottom:10px;">Migrate to a fresh household?</div>' +
-          '<div style="font-size:13px;color:#8A82C0;font-weight:600;margin-bottom:20px;">Copies everything \u2014 kids, chores, points \u2014 into a brand-new household. ' +
-          "You'll need to enter the new code on your other devices afterward.</div>" +
-          '<button id="mig-confirm" style="width:100%;padding:12px;border:none;border-radius:12px;' +
-          'background:linear-gradient(135deg,#FF6B9D,#7B61FF);color:#fff;font-weight:700;font-size:14.5px;cursor:pointer;margin-bottom:10px;">Migrate</button>' +
-          '<button id="mig-cancel" style="width:100%;padding:12px;border:2px solid #E2DBFA;border-radius:12px;' +
-          'background:#fff;color:#5D5490;font-weight:700;font-size:14.5px;cursor:pointer;">Cancel</button>';
-        overlay.appendChild(card);
-        document.body.appendChild(overlay);
-        card.querySelector("#mig-confirm").onclick = () => {
-          document.body.removeChild(overlay);
-          resolve(true);
-        };
-        card.querySelector("#mig-cancel").onclick = () => {
-          document.body.removeChild(overlay);
-          resolve(false);
-        };
-      });
-    }
-
-    function showMigratedScreen(newCode) {
-      return new Promise((resolve) => {
-        const overlay = document.createElement("div");
-        overlay.style.cssText =
-          "position:fixed;inset:0;background:linear-gradient(135deg,#FF6B9D,#7B61FF);display:flex;align-items:center;justify-content:center;z-index:99999;" +
-          "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:20px;";
-        const card = document.createElement("div");
-        card.style.cssText =
-          "background:#fff;border-radius:22px;padding:28px;max-width:380px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.3);" +
-          "text-align:center;box-sizing:border-box;";
-        card.innerHTML =
-          '<div style="font-size:15px;font-weight:700;color:#8A82C0;margin-bottom:10px;">Migration complete \u2014 new household code</div>' +
-          '<div style="font-size:38px;font-weight:800;letter-spacing:6px;color:#2B2250;margin-bottom:16px;font-family:monospace;">' +
-          newCode +
-          "</div>" +
-          '<div style="font-size:13px;color:#8A82C0;font-weight:600;margin-bottom:22px;">Enter this exact code on your other devices (Join household) to reconnect them. This device will reload now.</div>' +
-          '<button id="mig-continue" style="width:100%;padding:13px;border:none;border-radius:12px;' +
-          'background:linear-gradient(135deg,#FF6B9D,#7B61FF);color:#fff;font-weight:700;font-size:15px;cursor:pointer;">Continue</button>';
-        overlay.appendChild(card);
-        document.body.appendChild(overlay);
-        card.querySelector("#mig-continue").onclick = () => {
-          document.body.removeChild(overlay);
-          resolve();
-        };
-      });
-    }
-
-    window.migrateToFreshHousehold = async function () {
-      const confirmed = await showMigrateConfirm();
-      if (!confirmed) return;
-
-      try {
-        const snap = await docRef.get();
-        if (!snap.exists) {
-          alert("No data found to migrate.");
-          return;
-        }
-        const data = snap.data();
-        const newCode = generateHouseholdCode();
-        const newDocRef = db.collection("households").doc(newCode);
-        await newDocRef.set(data);
-        saveCode(newCode);
-        await showMigratedScreen(newCode);
-        window.location.reload();
-      } catch (e) {
-        alert("Migration failed: " + (e && e.message ? e.message : "unknown error") + "\n\nYour original data is untouched — safe to try again.");
-      }
-    };
-
-    showCodeBadge(session.hid);
-  }
 })();

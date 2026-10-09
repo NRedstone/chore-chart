@@ -50,7 +50,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.goto("http://app.test/blank");
-  await page.evaluate(() => { localStorage.setItem("choreChartHouseholdCode", "ABC234"); localStorage.setItem("cc-seen-help", "1"); sessionStorage.setItem("cc-banner-off", "1"); });
+  const devUid = be.linkDevice("ABC234"); // this page is a device linked to the household
+  await page.evaluate((u) => { localStorage.setItem("fake_user", JSON.stringify({ uid: u, isAnonymous: true })); localStorage.setItem("cc-seen-help", "1"); }, devUid);
   await page.goto("http://app.test/index.html");
   await page.waitForSelector("text=Make bed");
   const ss = "#cc-screensaver";

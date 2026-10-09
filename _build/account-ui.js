@@ -6,8 +6,9 @@
 //   * Other devices (the kids' tablet) link with a one-time code. They have
 //     no email: Firebase just gives them an anonymous identity, and the
 //     server function adds that identity to the household's device list.
-//   * Households that existed before accounts keep working the old way (just
-//     the household code) until claimed, and for 14 days after.
+//   * Households from before accounts were opened with just a 6-letter code.
+//     That no longer works: a device that still has an old code is told so
+//     and offered the normal ways in.
 //
 // Everything is plain JavaScript on purpose (no `?.`, no `??`) so it also
 // runs on older tablets. All state lives inside this closure; the rest of the
@@ -27,9 +28,7 @@
   function decideBoot(i) {
     if (i.user && i.member) return { mode: "account" };
     if (i.user && !i.user.isAnonymous) return i.user.emailVerified === false ? { mode: "verify-email" } : { mode: "needs-household" };
-    if (i.user && i.user.isAnonymous) return i.legacyCode ? { mode: "legacy" } : { mode: "welcome" };
-    if (i.legacyCode) return { mode: "legacy" };
-    return { mode: "welcome" };
+    return i.legacyCode ? { mode: "old-code" } : { mode: "welcome" };
   }
   function cleanTypedCode(raw, len) {
     return String(raw == null ? "" : raw).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, len);
@@ -255,14 +254,6 @@
   function readMember(uid) {
     return S.db.collection("members").doc(uid).get().then(function (s) { return s.exists ? s.data() : null; });
   }
-  function readStatus(code) {
-    return S.db.collection("status").doc(code).get().then(function (s) {
-      if (!s.exists) return { claimed: false, graceActive: false };
-      var d = s.data();
-      var until = tsMs(d.graceUntil);
-      return { claimed: !!d.claimed, graceUntil: until, graceActive: until != null && until > Date.now() };
-    }).catch(function () { return null; }); // unknown (offline): carry on, the app shows its own error if it must
-  }
   function clearStoredCode() {
     try { localStorage.removeItem(HOUSEHOLD_CODE_KEY); } catch (e) {}
   }
@@ -397,8 +388,8 @@
       ov.card.appendChild(h("div", { style: "height:14px;" }));
       ov.card.appendChild(choiceCard("cc-link-btn", ICON_PEOPLE, "background:#EDE8FF;color:#6A4FF0;", "Join a family's chart", "Use a code from the owner. No email needed.", function () {
         ov.close();
-        linkScreen({ allowOld: true }).then(function (r) {
-          if (r === "linked" || r === "legacy") resolve();
+        linkScreen().then(function (r) {
+          if (r === "linked") resolve();
           else if (r === "owner") ownerAuth("signin").then(function (r2) { if (r2 === "done") resolve(); else again(); });
           else again();
         });
@@ -601,7 +592,7 @@
   }
 
   // ---- 4. Join with a one-time code (no email needed).
-  // Resolves "linked", "legacy" (joined with an old household code), "owner"
+  // Resolves "linked", "owner"
   // (they're the owner after all) or "back".
   function linkScreen(opts) {
     opts = opts || {};
@@ -648,31 +639,13 @@
       ov.card.appendChild(go);
       ov.card.appendChild(err);
 
-      if (opts.allowOld) {
-        var oldBox = h("div", { style: "display:none;margin-top:14px;" });
-        var oldIn = textInput("Household code", 6, "", true);
-        oldIn.id = "cc-old-code";
-        var oldGo = secondaryBtn("Join with the old code", function () {
-          var c = cleanTypedCode(oldIn.value, 6);
-          if (c.length !== 6) { err.show("Enter the 6-character household code."); return; }
-          try { localStorage.setItem(HOUSEHOLD_CODE_KEY, c); } catch (e) {}
-          done("legacy");
-        });
-        oldGo.id = "cc-old-go";
-        oldBox.appendChild(oldIn);
-        oldBox.appendChild(oldGo);
-        var oldToggle = textLink("Have an old 6-letter household code?", function () { oldBox.style.display = "block"; oldToggle.style.display = "none"; });
-        oldToggle.id = "cc-old-toggle";
-        ov.card.appendChild(oldToggle);
-        ov.card.appendChild(oldBox);
-      }
       ov.card.appendChild(spacer());
       ov.card.appendChild(linkLine("Are you the owner?", "Sign in instead", function () { done("owner"); }, "cc-join-owner"));
     });
   }
 
   // Signed in, but not yet part of a household.
-  function setupHouseholdScreen(user, legacyCode) {
+  function setupHouseholdScreen(user) {
     return new Promise(function (resolve) {
       var ov = openOverlay("setup");
       var err = errorLine();
@@ -695,24 +668,6 @@
       });
       s1.appendChild(b1);
 
-      var s2 = section("I already use this app", "Secure the household you already have. Type its 6-character code.");
-      var claimIn = textInput("Household code", 6, legacyCode || "", true);
-      claimIn.id = "cc-claim-code";
-      claimIn.style.marginTop = "8px";
-      var b2 = secondaryBtn("Secure my household", null);
-      b2.id = "cc-claim-btn";
-      b2.onclick = withBusy(b2, err, function () {
-        var c = cleanTypedCode(claimIn.value, 6);
-        if (c.length !== 6) throw { message: "Enter the 6-character household code." };
-        return call("claimHousehold", { code: c }).then(function (r) {
-          clearStoredCode();
-          ov.close();
-          return claimedScreen(r.graceUntil).then(resolve);
-        });
-      });
-      s2.appendChild(claimIn);
-      s2.appendChild(b2);
-
       var s3 = section("I'm taking over a household", "Someone offered you ownership. Type the 8-character code they gave you.");
       var xferIn = textInput("ABCD-EFGH", 9, "", true);
       xferIn.id = "cc-transfer-code";
@@ -729,7 +684,6 @@
       s3.appendChild(b3);
 
       ov.card.appendChild(s1);
-      ov.card.appendChild(s2);
       ov.card.appendChild(s3);
       ov.card.appendChild(err);
       var other = textLink("Use a different account", function () {
@@ -737,46 +691,6 @@
       });
       other.id = "cc-different-account";
       ov.card.appendChild(other);
-    });
-  }
-
-  function claimedScreen(graceUntil) {
-    return new Promise(function (resolve) {
-      var ov = openOverlay("setup");
-      ov.card.appendChild(h("div", { style: "height:24px;" }));
-      ov.card.appendChild(title("Your household is secured"));
-      ov.card.appendChild(sub("You're now the owner."));
-      ov.card.appendChild(para("Your other devices keep working the old way until " + (graceUntil ? fmtDate(graceUntil) : "the end of the grace period") + ". To link each one: on that device open the app, tap “Join a family's chart”, and type a code from Devices (unlock, then Settings, then Devices, then Link a new device).", "margin-bottom:6px;"));
-      var go = primaryBtn("Continue", function () { ov.close(); resolve(); });
-      go.id = "cc-claimed-continue";
-      ov.card.appendChild(go);
-    });
-  }
-
-  // An old-style device after its household was claimed and the grace window ended.
-  function protectedScreen() {
-    return new Promise(function (resolve) {
-      var ov = openOverlay("setup");
-      ov.card.appendChild(h("div", { style: "height:24px;" }));
-      ov.card.appendChild(title("This household is protected"));
-      ov.card.appendChild(sub("It now has an owner. Join with a code from the owner, or sign in if that's you."));
-      function again() { protectedScreen().then(resolve); }
-      var link = primaryBtn("Join with a code", function () {
-        ov.close();
-        linkScreen().then(function (r) {
-          if (r === "linked") resolve();
-          else if (r === "owner") ownerAuth("signin").then(function (r2) { if (r2 === "done") resolve(); else again(); });
-          else again();
-        });
-      });
-      link.id = "cc-link-btn";
-      var owner = secondaryBtn("I'm the owner: sign in", function () {
-        ov.close();
-        ownerAuth("signin").then(function (r) { if (r === "done") resolve(); else again(); });
-      });
-      owner.id = "cc-owner-signin";
-      ov.card.appendChild(link);
-      ov.card.appendChild(owner);
     });
   }
 
@@ -803,14 +717,13 @@
           if (d.mode === "account") {
             return { mode: "account", hid: member.hid, role: member.role, user: user };
           }
-          if (d.mode === "legacy") {
-            return readStatus(legacyCode).then(function (st) {
-              if (st && st.claimed && !st.graceActive) return protectedScreen().then(loop);
-              return { mode: "legacy", hid: legacyCode, status: st };
-            });
+          if (d.mode === "old-code") {
+            // An old 6-letter household code from before accounts: no longer a way in.
+            clearStoredCode();
+            return welcomeScreen("The old 6-letter household code no longer opens a chart. Ask the chart's owner for a join code, then tap \u201cJoin a family's chart\u201d.").then(loop);
           }
           if (d.mode === "verify-email") return ensureVerified().then(loop);
-          if (d.mode === "needs-household") return setupHouseholdScreen(user, legacyCode).then(loop);
+          if (d.mode === "needs-household") return setupHouseholdScreen(user).then(loop);
           return welcomeScreen(takeNotice()).then(loop);
         });
       });
@@ -846,55 +759,6 @@
     }).catch(function (e) {
       if (e && e.code === "permission-denied") return handleAccessLost();
     });
-  }
-
-  // ------------------------------------------------------------------ legacy (pre-accounts) devices
-  function secureThisHousehold() {
-    var ov = openOverlay("dim");
-    var err = errorLine();
-    ov.card.appendChild(title("Secure this household"));
-    ov.card.appendChild(sub("Sign in with Google or email to become its owner. Nothing about your chores changes."));
-    var go = primaryBtn("Continue", null);
-    go.id = "cc-secure-go";
-    go.onclick = function () {
-      var code = getStoredCode();
-      ov.close();
-      ownerAuth("create").then(function (r) {
-        if (r !== "done") return;
-        return call("claimHousehold", { code: code }).then(function (res) {
-          clearStoredCode();
-          return claimedScreen(res.graceUntil).then(function () { window.location.reload(); });
-        }, function (e) {
-          // Signed in but couldn't claim: the setup screen after the reload offers it again.
-          toast(friendlyError(e));
-          setTimeout(function () { window.location.reload(); }, 2500);
-        });
-      });
-    };
-    ov.card.appendChild(go);
-    ov.card.appendChild(err);
-    ov.card.appendChild(textLink("Not now", ov.close));
-  }
-  function linkThisDevice() {
-    linkScreen().then(function (r) {
-      if (r === "linked") window.location.reload();
-      else if (r === "owner") ownerAuth("signin").then(function (r2) { if (r2 === "done") window.location.reload(); });
-    });
-  }
-
-  function showLegacyBanner(status) {
-    try { if (sessionStorage.getItem("cc-banner-off")) return; } catch (e) {}
-    var text, label, action;
-    if (status && !status.claimed) { text = "Secure this household with a sign-in"; label = "Secure"; action = secureThisHousehold; }
-    else if (status && status.claimed && status.graceActive) { text = "Link this device before " + fmtDate(status.graceUntil); label = "Link"; action = linkThisDevice; }
-    else return;
-    var bar = h("div", { id: "cc-legacy-banner", role: "status", style: "position:fixed;left:12px;bottom:84px;z-index:99980;max-width:calc(100% - 24px);box-sizing:border-box;display:flex;align-items:center;padding:6px 8px 6px 16px;background:#fff;border:2px solid #E2DBFA;border-radius:999px;box-shadow:0 10px 28px rgba(43,34,80,0.22);font-family:" + FONT + ";" });
-    bar.appendChild(h("span", { text: text, style: "font-size:13px;font-weight:800;color:#2B2250;margin-right:8px;" }));
-    bar.appendChild(h("button", { type: "button", text: "Later", onClick: function () { try { sessionStorage.setItem("cc-banner-off", "1"); } catch (e) {} if (bar.parentNode) bar.parentNode.removeChild(bar); }, style: "min-height:40px;padding:0 10px;border:none;background:none;cursor:pointer;font:700 13px " + FONT + ";color:#6F66AD;" }));
-    var go = h("button", { type: "button", text: label, onClick: action, style: "min-height:40px;padding:0 18px;border:none;border-radius:999px;cursor:pointer;background:" + GRADIENT + ";color:#fff;font:800 13px " + FONT + ";" });
-    go.id = "cc-legacy-banner-go";
-    bar.appendChild(go);
-    document.body.appendChild(bar);
   }
 
   // ------------------------------------------------------------------ Devices screen
@@ -933,26 +797,9 @@
     }
     ov.card.appendChild(body);
 
-    // ---- legacy (not yet on accounts) view
-    if (s.mode === "legacy") {
-      body.appendChild(para("Right now this household is opened only with its code, so anyone who learns the code can get in. Signing in (Google or email) makes you its owner and lets you link devices one at a time.", "margin-bottom:6px;"));
-      var st = s.status;
-      if (st && st.claimed && st.graceActive) {
-        body.appendChild(para("It already has an owner. This device keeps working the old way until " + fmtDate(st.graceUntil) + ". Link it with a code from the owner's Devices screen.", "margin:10px 0;"));
-        var lb = primaryBtn("Link this device", function () { closeAll(); linkThisDevice(); });
-        lb.id = "cc-devices-link-this";
-        body.appendChild(lb);
-      } else {
-        var sb = primaryBtn("Secure this household", function () { closeAll(); secureThisHousehold(); });
-        sb.id = "cc-devices-secure";
-        body.appendChild(sb);
-      }
-      return closeAll;
-    }
-
     // ---- account view
     var isOwner = s.role === "owner";
-    var uiState = { acc: null, status: null, msg: "", note: "", link: null, renaming: null, pending: null, emailDraft: "", renameDraft: "" };
+    var uiState = { acc: null, msg: "", note: "", link: null, renaming: null, pending: null, emailDraft: "", renameDraft: "" };
     var redrawLater = false;
     // Changes made on other devices redraw this screen. Never do that while
     // someone is typing in a field here: wait until they click away.
@@ -974,10 +821,6 @@
     // Some owner actions need a fresh sign-in: Google opens its pop-up
     // (straight from the tap), an email account types its password again.
     function reauth() { return confirmOwnerIdentity(); }
-    function loadStatus() {
-      return readStatus(s.hid).then(function (st) { uiState.status = st; render(); });
-    }
-
     function confirmable(key, label, confirmLabel, run, danger) {
       if (uiState.pending !== key) return smallBtn(label, function () { uiState.pending = key; render(); }, danger);
       var wrap = h("span", { style: "display:inline-flex;gap:6px;align-items:center;" });
@@ -1016,17 +859,6 @@
       body.appendChild(para(isOwner
         ? "You're signed in as the owner (" + (acc.ownerEmail || "your account") + ")."
         : "This is a linked device" + (me ? " (\u201c" + me.name + "\u201d)." : "."), "margin-bottom:12px;"));
-
-      // grace window
-      var st = uiState.status;
-      if (isOwner && st && st.graceActive) {
-        var g = h("div", { id: "cc-grace", style: "background:#F4F0FF;border-radius:12px;padding:10px 12px;margin-bottom:12px;" });
-        g.appendChild(para("Devices that haven't been linked yet still work with the old household code until " + fmtDate(st.graceUntil) + ". Once everything is linked, you can end that now."));
-        var endBtn = confirmable("endgrace", "End it now", "End now", function () { call("endGrace").then(loadStatus).catch(fail); }, true);
-        endBtn.style.marginTop = "8px";
-        g.appendChild(h("div", { style: "margin-top:8px;" }, [endBtn]));
-        body.appendChild(g);
-      }
 
       // device list
       var list = h("div", { id: "cc-device-list", style: "border-top:1.5px solid #F1EDFF;" });
@@ -1151,7 +983,6 @@
     }, function (e) {
       if (e && e.code === "permission-denied") { closeAll(); handleAccessLost(); }
     });
-    loadStatus();
     return closeAll;
   }
 
@@ -1175,8 +1006,6 @@
       try { localStorage.setItem(SESSION_KEY, JSON.stringify({ uid: session.user.uid, hid: session.hid, role: session.role })); } catch (e) {}
       document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") checkAccess(); });
       setInterval(checkAccess, 5 * 60 * 1000);
-    } else {
-      showLegacyBanner(session.status);
     }
   }
 

@@ -85,22 +85,29 @@ class Backend {
     });
   }
   now() { return Date.now() + this.clock.offset; }
+  // Makes a household reachable by a linked device (creating an owner record
+  // if the household has none yet) and returns the device's id. A test page
+  // becomes that device by storing { uid, isAnonymous: true } as "fake_user".
+  linkDevice(hid, uid) {
+    uid = uid || "dev_" + hid.toLowerCase() + "_" + ++this.n;
+    const acc = this.docs.get("access/" + hid) || { ownerUid: "test_owner", ownerEmail: "owner@example.com", devices: {}, linkCodes: {}, pendingTransfer: null, minAuthTime: 0, createdAt: Date.now() };
+    acc.devices[uid] = { name: "Test device", linkedAt: Date.now() };
+    this.docs.set("access/" + hid, clone(acc));
+    this.docs.set("members/" + uid, { hid, role: "device", since: Date.now() });
+    return uid;
+  }
   doc(p) { return this.docs.has(p) ? clone(this.docs.get(p)) : null; }
   put(p, d) { this.docs.set(p, clone(d)); }
 
-  // ---------- model of firestore.rules (transition version) ----------
+  // ---------- model of firestore.rules ----------
   allowed(method, p, user) {
     const [col, id] = p.split("/");
     const access = this.docs.get("access/" + id);
-    const status = this.docs.get("status/" + id);
-    const claimed = !!access;
-    const legacyOpen = !claimed || !!(status && status.graceUntil && this.now() < status.graceUntil.__ts);
     const isOwner = !!(user && access && access.ownerUid === user.uid && (user.auth_time || 0) >= access.minAuthTime);
     const isDevice = !!(user && access && access.devices && user.uid in access.devices);
-    if (col === "households") return legacyOpen || isOwner || isDevice;
+    if (col === "households") return isOwner || isDevice;
     if (col === "access") return method === "get" && (isOwner || isDevice);
     if (col === "members") return method === "get" && !!user && user.uid === id;
-    if (col === "status") return method === "get";
     return false;
   }
 

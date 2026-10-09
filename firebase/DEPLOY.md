@@ -9,9 +9,8 @@ The app side is the new `index.html` / `sw.js` you already have.
 |---|---|
 | `functions/handlers.js` | All the account logic (claim, link codes, devices, transfer) |
 | `functions/index.js`, `package.json` | Publishes that logic as Cloud Functions |
-| `functions/test/handlers.test.js` | 34 tests of the logic. Run: `cd functions && node test/handlers.test.js` |
-| `firestore.rules` | **Transition rules**: use these first |
-| `firestore.rules.final` | Final rules: no code-only access at all. Use at the very end |
+| `functions/test/handlers.test.js` | 39 tests of the logic. Run: `cd functions && node test/handlers.test.js` |
+| `firestore.rules` | Security rules: only the owner and linked devices can reach a household |
 | `firestore.rules.no-signout-others` | Safety net, see "If owners are locked out" |
 | `firebase.json`, `.firebaserc` | Tells the Firebase tool which project to use |
 
@@ -39,13 +38,12 @@ npm install -g firebase-tools
 firebase login
 cd functions
 npm install
-node test/handlers.test.js        # should end with: 34 tests, 0 failed
+node test/handlers.test.js        # should end with: 39 tests, 0 failed
 cd ..
 firebase deploy --only functions,firestore:rules
 ```
 
-- This publishes 12 small functions and the **transition rules** together.
-- It's safe to do before the new app is live: the transition rules still let old-style devices in (unclaimed households stay open exactly as before).
+- This publishes 12 small functions and the security rules together.
 - If the tool complains about the Node version, send me the exact message.
 
 ## 3. Check the rules (5 minutes)
@@ -88,12 +86,11 @@ Fix: `firebase deploy --only firestore:rules` using `firestore.rules.no-signout-
 3. When everything is linked: **Devices, End it now**.
 4. Do one friend next, then the rest. Each one: open the app, tap the banner, sign in.
 
-## 7. Lock it down (only when every household has been claimed)
-Copy `firestore.rules.final` over `firestore.rules` and run `firebase deploy --only firestore:rules`.
-After that, code-only access no longer exists anywhere. A household nobody claimed becomes unreachable (the data is kept, not deleted).
+## 7. Old codes switched off (done October 2026)
+The old way in, a 6-letter household code alone, has been switched off: `firestore.rules` now allows only owners and linked devices, and the app tells a device with an old code to ask the owner for a join code. To publish rules changes: `firebase deploy --only firestore:rules`.
 
 ## Rolling back
-- **Rules:** deploy `firestore.rules` again, or in an emergency paste this into the console's Rules tab and Publish (fully open, like before):
+- **Rules:** deploy `firestore.rules` again (or `firestore.rules.no-signout-others` if the owner is ever locked out), or in an emergency paste this into the console's Rules tab and Publish (fully open, like before):
   ```
   rules_version = '2';
   service cloud.firestore { match /databases/{database}/documents { match /{document=**} { allow read, write: if true; } } }

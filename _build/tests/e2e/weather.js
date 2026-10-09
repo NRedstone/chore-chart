@@ -70,8 +70,11 @@ const GEO = {
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.goto("https://app.test/blank");
-    await page.evaluate((c) => { localStorage.setItem("choreChartHouseholdCode", c); localStorage.setItem("cc-seen-help", "1"); sessionStorage.setItem("cc-banner-off", "1"); }, code);
+    // code = a household to join as a linked device; or null = a new owner with no household yet
+    const user = code ? { uid: be.linkDevice(code), isAnonymous: true } : { uid: "g_newowner", email: "newowner@gmail.com", isAnonymous: false };
+    await page.evaluate((u) => { localStorage.setItem("fake_user", JSON.stringify(u)); localStorage.setItem("cc-seen-help", "1"); }, user);
     await page.goto("https://app.test/index.html");
+    if (!code) { await page.click("#cc-create-hh"); }
     await page.waitForSelector("#cc-date-card");
     return { ctx, page, errors };
   }
@@ -183,9 +186,10 @@ const GEO = {
 
   // ---- 9. a brand-new household starts with no weather
   const callsBefore = weatherCalls.length;
-  const n = await device("NEW234");
+  const n = await device(null);
+  const newHid = be.doc("members/g_newowner").hid;
   await sleep(1200);
-  check("a brand-new household has no location", be.doc("households/NEW234") && be.doc("households/NEW234").location === null, JSON.stringify(be.doc("households/NEW234") && be.doc("households/NEW234").location));
+  check("a brand-new household has no location", be.doc("households/" + newHid) && be.doc("households/" + newHid).location === null, JSON.stringify(be.doc("households/" + newHid) && be.doc("households/" + newHid).location));
   check("...shows no weather and asks for none", (await theme(n)) === "none" && weatherCalls.length === callsBefore);
 
   const errs = [d, d2, n].flatMap((x) => x.errors);
