@@ -8,7 +8,7 @@ A shared chore and rewards chart for families. It runs on a kitchen tablet the k
 
 ## Why I built it
 
-Our family needed a chore chart that kids could run on their own: check off their morning and evening routines, see their streaks, and spend the points they earn. Parents needed to stay in control without hovering. Off-the-shelf apps were either too complex for young kids, needed an account per child, or couldn't live on a wall tablet. So I built this one, and we use it every day on an iPad at home.
+I built it for fun, and to solve a real problem at home. I wanted a chore chart my kids could run themselves on a tablet: check off their routines, see their streaks, and spend the points they earn, while parents keep control. I had specific features in mind and didn't want to pay for an app, so I built my own. Our family uses it at home on an iPad.
 
 ## What it does
 
@@ -40,7 +40,7 @@ Our family needed a chore chart that kids could run on their own: check off thei
 
 ## How I built it
 
-I'm the product owner of this project: I defined what it should do, made the design and privacy calls, reviewed every screen as a mockup before it was built, and tested each release on real devices, including our locked-down iPad. The code was written with an AI coding assistant (Claude), working from those decisions in small, tested steps. The commit history shows that progression.
+I'm the product owner of this project: I defined what it should do, made the design and privacy calls, reviewed new screens as mockups before they were built, and tested each release on real devices, including our locked-down iPad. The code was written with an AI coding assistant (Claude), working from those decisions in small, tested steps. The commit history shows that progression.
 
 ## Repository layout
 
