@@ -8,7 +8,7 @@
   if (!/[?&#]demo\b/.test(search)) return;
   window.__ccDemo = true;
 
-  var REPO_URL = "https://github.com/NRedstone/chore-chart";
+  var REPO_URL = "https://github.com/NRedstone/chore-chart#readme";
   var DAY = 24 * 60 * 60 * 1000;
   var ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
   function dayKey(daysAgo) { return new Date(Date.now() - daysAgo * DAY).toDateString(); }

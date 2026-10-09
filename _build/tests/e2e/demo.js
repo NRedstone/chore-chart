@@ -52,7 +52,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check("the demo opens straight into the sample family, no sign-in", await d.page.waitForSelector("text=Maya", { timeout: 8000 }).then(() => true, () => false));
   check("all three sample kids are there", (await d.page.isVisible("text=Leo")) && (await d.page.isVisible("text=Ava")));
   check("a banner says it's a demo and gives the PIN", (await d.page.textContent("#cc-demo-banner")).includes("Nothing you do here is saved") && (await d.page.textContent("#cc-demo-banner")).includes("1234"));
-  check("the banner links to the project page", (await d.page.getAttribute("#cc-demo-banner a", "href")) === "https://github.com/NRedstone/chore-chart");
+  check("the banner links to the project page", (await d.page.getAttribute("#cc-demo-banner a", "href")) === "https://github.com/NRedstone/chore-chart#readme");
   check("the weather shows for the sample family's city", await d.page.waitForSelector("#cc-weather-temp", { timeout: 4000 }).then(() => true, () => false));
   check("no sign-in or join screen appears", !(await d.page.$("#cc-welcome")) && !(await d.page.$("#cc-start-btn")));
   if (SHOTS) {
