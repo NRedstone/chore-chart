@@ -14,6 +14,7 @@ I built it for fun, and to solve a real problem at home. I wanted a chore chart 
 
 - **Five kinds of chores:** Morning and Evening routines that reset each day, Anytime chores with due days, optional Bonus chores worth points, and a Books list that keeps a permanent reading record.
 - **Points, streaks and rewards:** finishing the day earns a point, some chores pay their own, and kids redeem points from a reward menu the parents set up. Every day is logged, so parents can see the history.
+- **Kids make it theirs:** each kid taps their own avatar to pick an emoji and a color, with no PIN needed. Their color shows on their avatar, progress bar and filter button, so everyone can spot their section at a glance.
 - **Kid-safe by design:** kids can check off chores and add their own; editing, rewards and settings sit behind a parent PIN that re-locks after 2 minutes of inactivity. Adding a chore that's worth points needs a parent's approval.
 - **Built for a wall tablet:** a clock screen saver, updates that install themselves when the tablet is idle (it runs locked in iPad Guided Access, so nobody can refresh it), and a date card that changes color with the local weather.
 - **Accounts without friction:** one parent owns the household and signs in with Google or email. Every other device, from the kitchen tablet to a grandparent's phone, joins with a one-time 8-character code and never needs an email. The owner can remove a device, sign out every other device, or hand ownership to someone else.
