@@ -957,6 +957,8 @@ export default function ChoreTracker() {
     // several times in quick succession (rapid taps, or any accidental
     // feedback loop), only the *last* payload within a short window actually
     // gets sent, instead of flooding Firestore with one write per call.
+    // Tell the saver which saved copy this change was made to (see merge.js).
+    if (window.storage && typeof window.storage.beginEdit === "function") window.storage.beginEdit();
     pendingPayloadRef.current = payload;
     setSaving(true);
     if (pendingWriteTimerRef.current) clearTimeout(pendingWriteTimerRef.current);
@@ -966,44 +968,50 @@ export default function ChoreTracker() {
     }, 350);
   }
 
+  // Sends the latest change. Each save is merged with what's already saved
+  // (so it can't undo other devices' changes) and needs the server: if the
+  // connection is down it fails rather than being held back to go out later
+  // with an out-of-date copy. A failed change is kept and tried again every
+  // 15 seconds, and right after the connection check reconnects, until it
+  // goes through. The banner shows only while something really is unsaved.
+  const retryTimerRef = useRef(null);
   async function sendPendingWrite() {
     const payload = pendingPayloadRef.current;
     if (payload === null) return;
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    // Races each save attempt against a timeout — Firestore can internally
-    // queue a write and hang on it during backoff (rather than failing
-    // fast), and without this, a single hung attempt blocks the whole retry
-    // loop forever: the spinner never stops, and the error banner never
-    // gets a chance to show, since we'd never reach the point of giving up.
-    function withTimeout(promise, ms) {
-      return Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
     }
-
+    // Firestore can hang on a dead connection instead of failing; don't wait forever.
+    const withTimeout = (promise, ms) => Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
     let ok = false;
-    // A couple of delayed retries — enough to ride out a brief rate limit,
-    // without waiting so long it feels stuck.
-    const delays = [0, 800, 2000];
-    for (let i = 0; i < delays.length; i++) {
-      if (delays[i] > 0) await wait(delays[i]);
-      try {
-        const result = await withTimeout(window.storage.set(STORAGE_KEY, payload, true), 6000);
-        if (result) {
-          ok = true;
-          break;
-        }
-      } catch (e) {
-        // fall through to the next retry
-      }
+    try {
+      ok = !!(await withTimeout(window.storage.set(STORAGE_KEY, payload, true), 10000));
+    } catch (e) {
+      ok = false;
     }
-    // Only clear "saving" if nothing newer has been queued in the meantime —
-    // otherwise a fresh persist() call already owns the spinner.
-    if (pendingWriteTimerRef.current === null) {
-      setSaveError(!ok);
+    // A newer change arrived while this one was sending: it owns what happens next.
+    if (pendingWriteTimerRef.current !== null) return;
+    if (pendingPayloadRef.current !== payload) return;
+    if (ok) {
+      pendingPayloadRef.current = null;
+      setSaveError(false);
       setSaving(false);
+      return;
     }
-    pendingPayloadRef.current = null;
+    setSaveError(true);
+    setSaving(false);
+    retryTimerRef.current = setTimeout(sendPendingWrite, 15000);
   }
+  // Right after the connection check (re)connects, retry anything unsaved.
+  useEffect(() => {
+    const onChecked = () => {
+      if (pendingPayloadRef.current !== null && pendingWriteTimerRef.current === null) sendPendingWrite();
+    };
+    window.addEventListener("cc-connection-checked", onChecked);
+    return () => window.removeEventListener("cc-connection-checked", onChecked);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Locked controls: check unlocked before proceeding, otherwise prompt for the PIN.
   const pendingActionRef = useRef(null);
@@ -1248,6 +1256,8 @@ export default function ChoreTracker() {
     }
     lastInteractionRef.current = Date.now();
     setScreensaver(false);
+    // The tablet may have sat for hours: make sure the connection is still alive.
+    if (typeof window.__ccCheckConnection === "function") window.__ccCheckConnection();
   }
 
   // Kids/Rewards panels are only reachable while unlocked (their trigger
@@ -2370,6 +2380,8 @@ export default function ChoreTracker() {
 
         {saveError && (
           <div
+            id="cc-save-banner"
+            role="status"
             style={{
               position: "fixed",
               top: 18,
@@ -2378,15 +2390,18 @@ export default function ChoreTracker() {
               background: "#FFE3E3",
               color: "#C0392B",
               padding: "10px 18px",
-              borderRadius: 999,
+              borderRadius: 16,
               fontSize: 13,
               fontWeight: 700,
               boxShadow: "0 8px 20px rgba(192,57,43,0.25)",
               zIndex: 1200,
-              whiteSpace: "nowrap",
+              width: "max-content",
+              maxWidth: "calc(100% - 32px)",
+              textAlign: "center",
+              lineHeight: 1.45,
             }}
           >
-            Changes aren't saving right now — your edits may not persist.
+            Not saved yet. Reconnecting… your change will save as soon as the connection is back.
           </div>
         )}
 

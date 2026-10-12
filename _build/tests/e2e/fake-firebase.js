@@ -84,7 +84,10 @@
     }
     return v;
   }
+  // Test switches: window.__offline makes every database call fail like a dead
+  // connection; window.__pauseSync stops live updates reaching this page.
   function fsCall(method, path, data) {
+    if (window.__offline) return new Promise(function (_, reject) { setTimeout(function () { var e = new Error("unavailable"); e.code = "unavailable"; reject(e); }, 50); });
     return window.__be("fs", { method: method, path: path, data: data, user: plain(load()) }).then(function (r) {
       if (r && r.error) { var e = new Error(r.error.code); e.code = r.error.code; throw e; }
       return r;
@@ -101,10 +104,12 @@
         var last, stopped = false;
         function poll() {
           if (stopped) return;
+          if (window.__pauseSync) return;
           fsCall("get", path).then(function (r) {
             var key = JSON.stringify(r);
             if (key !== last) { last = key; cb({ exists: !!r.exists, id: id, data: function () { return revive(r.data); } }); }
           }, function (e) {
+            if (e && e.code === "unavailable") return; // like real Firestore: offline isn't an error, it just waits
             // Real Firestore may not tell an already-open listener that its access was
             // cut off. Tests can switch that off to prove the app notices on its own.
             if (window.__noLiveDenial && last !== undefined) return;
@@ -120,7 +125,22 @@
 
   window.firebase = {
     initializeApp: function () {},
-    firestore: function () { return { collection: function (name) { return { doc: function (id) { return docRef(name, id); } }; } }; },
+    firestore: function () {
+      return {
+        settings: function (s) { window.__fakeSettings = s; },
+        collection: function (name) { return { doc: function (id) { return docRef(name, id); } }; },
+        disableNetwork: function () { window.__fakeNetCycles = (window.__fakeNetCycles || 0) + 1; return Promise.resolve(); },
+        enableNetwork: function () { return Promise.resolve(); },
+        // Not truly atomic, which is fine for these tests: read, run, then write.
+        runTransaction: function (fn) {
+          var pending = null;
+          var tx = { get: function (ref) { return ref.get(); }, set: function (ref, d) { pending = [ref, d]; } };
+          return Promise.resolve(fn(tx)).then(function (result) {
+            return pending ? pending[0].set(pending[1]).then(function () { return result; }) : result;
+          });
+        },
+      };
+    },
     auth: Object.assign(function () { return authApi; }, {
       GoogleAuthProvider: function () { this.setCustomParameters = function () {}; },
       EmailAuthProvider: { credential: function (email, password) { return { email: email, password: password }; } },

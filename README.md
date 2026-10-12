@@ -29,6 +29,7 @@ I built it for fun, and to solve a real problem at home. I wanted a chore chart 
 - **The PIN separates parents from kids, not the device.** The other parent joins with a code like the tablet does, and uses the PIN for parent controls. Only the owner's own sign-in can manage devices or reset a forgotten PIN.
 - **No location tracking.** Weather comes from a city or postal code the owner types in once for the whole household. An earlier version could use a device's location; I removed it after thinking through a parent traveling and accidentally moving the home tablet's weather to a hotel.
 - **Moving existing families over safely.** Households that pre-dated accounts kept working with their old code for 14 days after being secured, so no device was locked out mid-week.
+- **Saves merge instead of overwrite.** Each device saves the whole household, so a tablet whose connection went stale overnight used to be able to undo changes made on a phone. Now every save is a three-way merge against what's currently saved: only what that device actually changed is applied, and points add up from both sides. A save that can't reach the server waits and retries rather than going out later with old data, and a watchdog reconnects the tablet when its connection quietly dies.
 - **Updates that reach a locked-down tablet.** The app checks for new versions on its own and reloads only when nobody is using it.
 
 ## How it's built
@@ -36,7 +37,7 @@ I built it for fun, and to solve a real problem at home. I wanted a chore chart 
 - **App:** React, compiled with esbuild into a single page that installs as a home-screen app (PWA), with a service worker for offline loading and self-updating.
 - **Data and accounts:** Firebase: Firestore for the shared household data with live sync, Firebase Authentication (Google, email and password, and anonymous devices), and Cloud Functions for everything that grants access, such as creating households, redeeming join codes and transferring ownership. Firestore security rules enforce who can read what.
 - **Hosting and deploys:** Cloudflare Workers. Every push to `main` deploys automatically.
-- **Tests:** over 220 automated checks. They cover 39 server tests for the account logic, plus end-to-end browser tests (Playwright) that drive the real app across several simulated devices, with Firebase replaced by a fake that runs the real server code.
+- **Tests:** over 250 automated checks. They cover 39 server tests for the account logic, plus end-to-end browser tests (Playwright) that drive the real app across several simulated devices, with Firebase replaced by a fake that runs the real server code.
 - **Weather:** Open-Meteo, a free service that needs no API key.
 
 ## How I built it

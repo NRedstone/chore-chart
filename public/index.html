@@ -26,9 +26,146 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-10-09 17:35 UTC";</script>
+<script>window.__ccBuild = "2026-10-12 02:52 UTC";</script>
 
 <script>
+// Three-way merge for saving the household.
+//
+// Every device keeps its own copy of the household and saves the whole thing.
+// Saving it as-is would let a device with an out-of-date copy (say, a tablet
+// whose connection went stale overnight) wipe out changes other devices made
+// meanwhile. Instead, each save is merged:
+//
+//   base   = the copy this device's edit started from
+//   local  = what this device wants to save
+//   remote = what is saved right now
+//
+// Anything this device changed (local differs from base) wins; anything it
+// didn't touch keeps whatever is saved now. Chores, kids and rewards are
+// merged item by item (by id), and a kid's points add up the changes from
+// both sides instead of one overwriting the other.
+//
+// Plain old JavaScript (no ?. or ??) so it runs on older tablets. Used by the
+// page (window.CCMerge) and by the tests (require).
+(function (root) {
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function has(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
+
+  // Field by field: this device's changes win, the rest comes from what's saved.
+  function mergeFields(base, local, remote) {
+    base = base || {}; local = local || {}; remote = remote || {};
+    var out = {};
+    var keys = {};
+    [base, local, remote].forEach(function (o) { Object.keys(o).forEach(function (k) { keys[k] = true; }); });
+    Object.keys(keys).forEach(function (k) {
+      var changedHere = !same(base[k], local[k]);
+      var v = changedHere ? local[k] : remote[k];
+      if (changedHere ? has(local, k) : has(remote, k)) out[k] = v;
+    });
+    return out;
+  }
+
+  // One item that may exist in any of the three versions.
+  function mergeItem(b, l, r, mergeBoth) {
+    var inB = b !== undefined, inL = l !== undefined, inR = r !== undefined;
+    if (!inB) {
+      if (inL && inR) return same(l, r) ? l : mergeBoth(undefined, l, r);
+      return inL ? l : r; // added on one side
+    }
+    if (!inL) return undefined; // deleted here: deleted
+    if (!inR) return same(l, b) ? undefined : l; // deleted elsewhere: stays deleted unless edited here
+    if (same(l, b)) return r;
+    if (same(r, b) || same(l, r)) return l;
+    return mergeBoth(b, l, r);
+  }
+
+  // Lists of things with ids: kids, chores, the reward menu.
+  function mergeList(base, local, remote) {
+    base = base || []; local = local || []; remote = remote || [];
+    var byId = function (list) { var m = {}; list.forEach(function (x) { if (x && x.id !== undefined) m[x.id] = x; }); return m; };
+    var B = byId(base), L = byId(local), R = byId(remote);
+    var ids = function (list) { return list.map(function (x) { return x && x.id; }); };
+    // Keep this device's order if it reordered things, otherwise the saved order.
+    var reordered = !same(ids(local).filter(function (id) { return id in B; }), ids(base).filter(function (id) { return id in L; }));
+    var first = reordered ? local : remote, second = reordered ? remote : local;
+    var order = [];
+    var seen = {};
+    first.concat(second).forEach(function (x) { if (x && x.id !== undefined && !seen[x.id]) { seen[x.id] = true; order.push(x.id); } });
+    var out = [];
+    order.forEach(function (id) {
+      var v = mergeItem(B[id], L[id], R[id], mergeFields);
+      if (v !== undefined) out.push(v);
+    });
+    return out;
+  }
+
+  // One kid's points and history.
+  function mergeReward(b, l, r) {
+    b = b || {};
+    var out = mergeFields(b, l, r);
+    // Points: add up what changed on each side (a reward redeemed on a phone
+    // and a bonus chore checked on the tablet both count).
+    if (typeof l.points === "number" && typeof r.points === "number") {
+      var bp = typeof b.points === "number" ? b.points : 0;
+      out.points = Math.max(0, r.points + (l.points - bp));
+    }
+    // Daily log: one entry per date; this device's version of a date wins if it changed it.
+    var bl = {}; (b.log || []).forEach(function (e) { bl[e.date] = e; });
+    var ll = {}; (l.log || []).forEach(function (e) { ll[e.date] = e; });
+    var rl = {}; (r.log || []).forEach(function (e) { rl[e.date] = e; });
+    var dates = [];
+    var seen = {};
+    (l.log || []).concat(r.log || []).forEach(function (e) { if (!seen[e.date]) { seen[e.date] = true; dates.push(e.date); } });
+    out.log = dates
+      .map(function (d) { return mergeItem(bl[d], ll[d], rl[d], function (x, y) { return y; }); })
+      .filter(function (e) { return e !== undefined; })
+      .sort(function (x, y) { return new Date(y.date) - new Date(x.date); })
+      .slice(0, 60);
+    // Redemptions: everything this device has, plus anything new from elsewhere.
+    var known = {};
+    (b.history || []).concat(l.history || []).forEach(function (h) { known[JSON.stringify(h)] = true; });
+    var newElsewhere = (r.history || []).filter(function (h) { return !known[JSON.stringify(h)]; });
+    out.history = newElsewhere.concat(l.history || []);
+    return out;
+  }
+
+  function mergeRewards(base, local, remote) {
+    base = base || {}; local = local || {}; remote = remote || {};
+    var out = {};
+    var keys = {};
+    [local, remote].forEach(function (o) { Object.keys(o).forEach(function (k) { keys[k] = true; }); });
+    Object.keys(keys).forEach(function (k) {
+      var v = mergeItem(base[k], local[k], remote[k], mergeReward);
+      if (v !== undefined) out[k] = v;
+    });
+    return out;
+  }
+
+  var LISTS = { kids: true, chores: true, rewardsMenu: true };
+
+  // Bookkeeping fields start with "_" and are never part of what the app saves.
+  function mergeHousehold(base, local, remote) {
+    base = base || {}; local = local || {}; remote = remote || {};
+    var out = {};
+    var keys = {};
+    [base, local, remote].forEach(function (o) { Object.keys(o).forEach(function (k) { if (k.charAt(0) !== "_") keys[k] = true; }); });
+    Object.keys(keys).forEach(function (k) {
+      if (LISTS[k]) out[k] = mergeList(base[k], local[k], remote[k]);
+      else if (k === "rewards") out[k] = mergeRewards(base[k], local[k], remote[k]);
+      else {
+        var changedHere = !same(base[k], local[k]);
+        var v = changedHere ? local[k] : remote[k];
+        if (v !== undefined) out[k] = v;
+      }
+    });
+    return out;
+  }
+
+  var api = { mergeHousehold: mergeHousehold, mergeList: mergeList, mergeRewards: mergeRewards };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  else root.CCMerge = api;
+})(typeof window !== "undefined" ? window : this);
+
 // Demo mode: open the app with "?demo" at the end of the address.
 //
 // A made-up family that lives only in this browser tab. It never connects to
@@ -1271,6 +1408,12 @@ window.showChoreChartHelp = showHelpModal;
 if (!window.__ccDemo) window.__syncReady = (async () => {
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
+  // Long-lived connections on iPads (a wall tablet that never closes the app)
+  // can go quietly stale. This lets Firestore fall back to a sturdier way of
+  // talking to the server when the usual one misbehaves.
+  try {
+    db.settings({ experimentalAutoDetectLongPolling: true });
+  } catch (e) {}
   const auth = firebase.auth();
   const fns = firebase.functions(); // us-central1, where the functions are published
 
@@ -1298,6 +1441,52 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     if (e && e.code === "permission-denied") CCAcct.handleAccessLost();
   };
 
+  // ---- Saving: merged, never blindly overwritten (see merge.js) ----
+  // uiBase: the saved household the app's screen is built on (the last copy
+  // received from the server, or the last copy this device saved).
+  // editBase: what the next save's changes are measured against.
+  // The versions tell whether a newer copy from the server replaced the
+  // screen in between, in which case the bases are left alone.
+  let uiBase;
+  let uiVersion = 0;
+  let editBase;
+  let editVersion = 0;
+  let queue = Promise.resolve();
+  const strip = (d) => {
+    const out = {};
+    Object.keys(d || {}).forEach((k) => {
+      if (k.charAt(0) !== "_") out[k] = d[k];
+    });
+    return out;
+  };
+  const newWriteId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+  // One save, done as a transaction: read what's saved now, merge this
+  // device's changes into it, write the result. It needs the server, so it
+  // fails instead of queueing a stale copy to go out later. A save that was
+  // already applied (its id is in _recentWrites) is never applied twice.
+  async function saveMerged(value) {
+    const local = JSON.parse(value);
+    const base = editBase;
+    const usedVersion = editVersion;
+    const uiVersionAtStart = uiVersion;
+    const writeId = newWriteId();
+    const merged = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(docRef);
+      const remote = snap.exists ? snap.data() : undefined;
+      const recent = (remote && remote._recentWrites) || [];
+      if (recent.indexOf(writeId) !== -1) return remote;
+      const result = window.CCMerge.mergeHousehold(base ? strip(base) : undefined, local, remote ? strip(remote) : undefined);
+      result._recentWrites = [writeId].concat(recent).slice(0, 20);
+      tx.set(docRef, result);
+      return result;
+    });
+    // The screen now matches what was just saved, unless a newer copy arrived meanwhile.
+    if (editVersion === usedVersion) editBase = local;
+    if (uiVersion === uiVersionAtStart) uiBase = local;
+    return merged;
+  }
+
   window.storage = {
     async get(key) {
       // Only a genuinely-missing document should be treated as "no data yet"
@@ -1312,16 +1501,28 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         throw e;
       }
       if (!snap.exists) return null;
-      return { key, value: JSON.stringify(snap.data()), shared: true };
+      uiBase = strip(snap.data());
+      uiVersion++;
+      return { key, value: JSON.stringify(uiBase), shared: true };
     },
-    async set(key, value) {
-      try {
-        await docRef.set(JSON.parse(value));
-        return { key, value, shared: true };
-      } catch (e) {
-        lost(e);
-        return null;
-      }
+    // Called by the app at the moment it makes a change, so the save knows
+    // which copy the change was made to.
+    beginEdit() {
+      editBase = uiBase;
+      editVersion = uiVersion;
+    },
+    // Saves run one at a time, in order (an earlier one that's still waiting
+    // on a slow connection finishes, or fails, before the next one starts).
+    set(key, value) {
+      const run = queue.then(() => saveMerged(value));
+      queue = run.catch(() => {});
+      return run.then(
+        (merged) => ({ key, value: JSON.stringify(strip(merged)), shared: true }),
+        (e) => {
+          lost(e);
+          return null;
+        }
+      );
     },
     async delete(key) {
       try {
@@ -1337,12 +1538,50 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     },
   };
 
+  // ---- Connection watchdog ----
+  // A tablet that stays open for days can end up with a connection that looks
+  // fine but is dead. Every few minutes (and whenever the app comes back into
+  // view, the network returns, or the screen saver is dismissed) ask the
+  // server directly. If it doesn't answer, tear the connection down and
+  // reconnect, then let the app retry anything that didn't save.
+  let checking = false;
+  async function checkConnection() {
+    if (checking || document.visibilityState === "hidden") return;
+    checking = true;
+    try {
+      const ok = await Promise.race([
+        docRef.get({ source: "server" }).then(() => true, (e) => {
+          lost(e);
+          return false;
+        }),
+        new Promise((resolve) => setTimeout(() => resolve(false), 8000)),
+      ]);
+      if (!ok) {
+        await db.disableNetwork().catch(() => {});
+        await db.enableNetwork().catch(() => {});
+        window.__ccReconnects = (window.__ccReconnects || 0) + 1;
+      }
+      window.dispatchEvent(new Event("cc-connection-checked"));
+    } finally {
+      checking = false;
+    }
+  }
+  window.__ccCheckConnection = checkConnection;
+  setInterval(checkConnection, 3 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkConnection();
+  });
+  window.addEventListener("online", checkConnection);
+
   // Live sync: fires whenever the document changes, from this device or any
   // other one connected to the same household.
   window.subscribeToSync = function (callback) {
     return docRef.onSnapshot(
       (snap) => {
-        if (snap.exists) callback(snap.data());
+        if (!snap.exists) return;
+        uiBase = strip(snap.data());
+        uiVersion++;
+        callback(JSON.parse(JSON.stringify(uiBase)));
       },
       (err) => {
         console.error("Sync error:", err);
@@ -2254,6 +2493,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         dailyPointValue: useDailyPointValue,
         location: locationRef.current === void 0 ? null : locationRef.current
       });
+      if (window.storage && typeof window.storage.beginEdit === "function") window.storage.beginEdit();
       pendingPayloadRef.current = payload;
       setSaving(true);
       if (pendingWriteTimerRef.current) clearTimeout(pendingWriteTimerRef.current);
@@ -2262,32 +2502,40 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         sendPendingWrite();
       }, 350);
     }
+    const retryTimerRef = useRef(null);
     async function sendPendingWrite() {
       const payload = pendingPayloadRef.current;
       if (payload === null) return;
-      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      function withTimeout(promise, ms) {
-        return Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
       }
+      const withTimeout = (promise, ms) => Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
       let ok = false;
-      const delays = [0, 800, 2e3];
-      for (let i = 0; i < delays.length; i++) {
-        if (delays[i] > 0) await wait(delays[i]);
-        try {
-          const result = await withTimeout(window.storage.set(STORAGE_KEY, payload, true), 6e3);
-          if (result) {
-            ok = true;
-            break;
-          }
-        } catch (e) {
-        }
+      try {
+        ok = !!await withTimeout(window.storage.set(STORAGE_KEY, payload, true), 1e4);
+      } catch (e) {
+        ok = false;
       }
-      if (pendingWriteTimerRef.current === null) {
-        setSaveError(!ok);
+      if (pendingWriteTimerRef.current !== null) return;
+      if (pendingPayloadRef.current !== payload) return;
+      if (ok) {
+        pendingPayloadRef.current = null;
+        setSaveError(false);
         setSaving(false);
+        return;
       }
-      pendingPayloadRef.current = null;
+      setSaveError(true);
+      setSaving(false);
+      retryTimerRef.current = setTimeout(sendPendingWrite, 15e3);
     }
+    useEffect(() => {
+      const onChecked = () => {
+        if (pendingPayloadRef.current !== null && pendingWriteTimerRef.current === null) sendPendingWrite();
+      };
+      window.addEventListener("cc-connection-checked", onChecked);
+      return () => window.removeEventListener("cc-connection-checked", onChecked);
+    }, []);
     const pendingActionRef = useRef(null);
     const [pinSkipAction, setPinSkipAction] = useState(null);
     function withUnlock(action) {
@@ -2494,6 +2742,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       }
       lastInteractionRef.current = Date.now();
       setScreensaver(false);
+      if (typeof window.__ccCheckConnection === "function") window.__ccCheckConnection();
     }
     useEffect(() => {
       if (!unlocked) setSettingsTab(null);
@@ -3360,6 +3609,8 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       ), saveError && /* @__PURE__ */ React.createElement(
         "div",
         {
+          id: "cc-save-banner",
+          role: "status",
           style: {
             position: "fixed",
             top: 18,
@@ -3368,15 +3619,18 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
             background: "#FFE3E3",
             color: "#C0392B",
             padding: "10px 18px",
-            borderRadius: 999,
+            borderRadius: 16,
             fontSize: 13,
             fontWeight: 700,
             boxShadow: "0 8px 20px rgba(192,57,43,0.25)",
             zIndex: 1200,
-            whiteSpace: "nowrap"
+            width: "max-content",
+            maxWidth: "calc(100% - 32px)",
+            textAlign: "center",
+            lineHeight: 1.45
           }
         },
-        "Changes aren't saving right now \u2014 your edits may not persist."
+        "Not saved yet. Reconnecting\u2026 your change will save as soon as the connection is back."
       ), deletedKidSnapshot && /* @__PURE__ */ React.createElement(
         "div",
         {

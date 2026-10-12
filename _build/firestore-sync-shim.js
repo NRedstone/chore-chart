@@ -80,6 +80,12 @@ window.showChoreChartHelp = showHelpModal;
 if (!window.__ccDemo) window.__syncReady = (async () => {
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
+  // Long-lived connections on iPads (a wall tablet that never closes the app)
+  // can go quietly stale. This lets Firestore fall back to a sturdier way of
+  // talking to the server when the usual one misbehaves.
+  try {
+    db.settings({ experimentalAutoDetectLongPolling: true });
+  } catch (e) {}
   const auth = firebase.auth();
   const fns = firebase.functions(); // us-central1, where the functions are published
 
@@ -107,6 +113,52 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     if (e && e.code === "permission-denied") CCAcct.handleAccessLost();
   };
 
+  // ---- Saving: merged, never blindly overwritten (see merge.js) ----
+  // uiBase: the saved household the app's screen is built on (the last copy
+  // received from the server, or the last copy this device saved).
+  // editBase: what the next save's changes are measured against.
+  // The versions tell whether a newer copy from the server replaced the
+  // screen in between, in which case the bases are left alone.
+  let uiBase;
+  let uiVersion = 0;
+  let editBase;
+  let editVersion = 0;
+  let queue = Promise.resolve();
+  const strip = (d) => {
+    const out = {};
+    Object.keys(d || {}).forEach((k) => {
+      if (k.charAt(0) !== "_") out[k] = d[k];
+    });
+    return out;
+  };
+  const newWriteId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+  // One save, done as a transaction: read what's saved now, merge this
+  // device's changes into it, write the result. It needs the server, so it
+  // fails instead of queueing a stale copy to go out later. A save that was
+  // already applied (its id is in _recentWrites) is never applied twice.
+  async function saveMerged(value) {
+    const local = JSON.parse(value);
+    const base = editBase;
+    const usedVersion = editVersion;
+    const uiVersionAtStart = uiVersion;
+    const writeId = newWriteId();
+    const merged = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(docRef);
+      const remote = snap.exists ? snap.data() : undefined;
+      const recent = (remote && remote._recentWrites) || [];
+      if (recent.indexOf(writeId) !== -1) return remote;
+      const result = window.CCMerge.mergeHousehold(base ? strip(base) : undefined, local, remote ? strip(remote) : undefined);
+      result._recentWrites = [writeId].concat(recent).slice(0, 20);
+      tx.set(docRef, result);
+      return result;
+    });
+    // The screen now matches what was just saved, unless a newer copy arrived meanwhile.
+    if (editVersion === usedVersion) editBase = local;
+    if (uiVersion === uiVersionAtStart) uiBase = local;
+    return merged;
+  }
+
   window.storage = {
     async get(key) {
       // Only a genuinely-missing document should be treated as "no data yet"
@@ -121,16 +173,28 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         throw e;
       }
       if (!snap.exists) return null;
-      return { key, value: JSON.stringify(snap.data()), shared: true };
+      uiBase = strip(snap.data());
+      uiVersion++;
+      return { key, value: JSON.stringify(uiBase), shared: true };
     },
-    async set(key, value) {
-      try {
-        await docRef.set(JSON.parse(value));
-        return { key, value, shared: true };
-      } catch (e) {
-        lost(e);
-        return null;
-      }
+    // Called by the app at the moment it makes a change, so the save knows
+    // which copy the change was made to.
+    beginEdit() {
+      editBase = uiBase;
+      editVersion = uiVersion;
+    },
+    // Saves run one at a time, in order (an earlier one that's still waiting
+    // on a slow connection finishes, or fails, before the next one starts).
+    set(key, value) {
+      const run = queue.then(() => saveMerged(value));
+      queue = run.catch(() => {});
+      return run.then(
+        (merged) => ({ key, value: JSON.stringify(strip(merged)), shared: true }),
+        (e) => {
+          lost(e);
+          return null;
+        }
+      );
     },
     async delete(key) {
       try {
@@ -146,12 +210,50 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     },
   };
 
+  // ---- Connection watchdog ----
+  // A tablet that stays open for days can end up with a connection that looks
+  // fine but is dead. Every few minutes (and whenever the app comes back into
+  // view, the network returns, or the screen saver is dismissed) ask the
+  // server directly. If it doesn't answer, tear the connection down and
+  // reconnect, then let the app retry anything that didn't save.
+  let checking = false;
+  async function checkConnection() {
+    if (checking || document.visibilityState === "hidden") return;
+    checking = true;
+    try {
+      const ok = await Promise.race([
+        docRef.get({ source: "server" }).then(() => true, (e) => {
+          lost(e);
+          return false;
+        }),
+        new Promise((resolve) => setTimeout(() => resolve(false), 8000)),
+      ]);
+      if (!ok) {
+        await db.disableNetwork().catch(() => {});
+        await db.enableNetwork().catch(() => {});
+        window.__ccReconnects = (window.__ccReconnects || 0) + 1;
+      }
+      window.dispatchEvent(new Event("cc-connection-checked"));
+    } finally {
+      checking = false;
+    }
+  }
+  window.__ccCheckConnection = checkConnection;
+  setInterval(checkConnection, 3 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkConnection();
+  });
+  window.addEventListener("online", checkConnection);
+
   // Live sync: fires whenever the document changes, from this device or any
   // other one connected to the same household.
   window.subscribeToSync = function (callback) {
     return docRef.onSnapshot(
       (snap) => {
-        if (snap.exists) callback(snap.data());
+        if (!snap.exists) return;
+        uiBase = strip(snap.data());
+        uiVersion++;
+        callback(JSON.parse(JSON.stringify(uiBase)));
       },
       (err) => {
         console.error("Sync error:", err);
