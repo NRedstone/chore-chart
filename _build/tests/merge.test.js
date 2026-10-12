@@ -115,6 +115,54 @@ test("bookkeeping fields (starting with _) are left out of the merge", () => {
   const remote = clone(BASE); remote._recentWrites = ["w1"];
   eq("_recentWrites" in mergeHousehold(BASE, clone(BASE), remote), false);
 });
+// ---- redemptions (a bug once multiplied these)
+const X = { name: "Ice cream party", cost: 55, date: "Fri Sep 18 2026", paid: false };
+const withHist = (h) => { const d = clone(BASE); d.rewards.k1.history = clone(h); return d; };
+test("marking a redemption paid elsewhere doesn't duplicate it when a stale device saves", () => {
+  const b = withHist([X]);
+  const local = clone(b); local.rewards.k1.log = [{ date: "Mon", pointsEarned: 0, chores: [] }];
+  const remote = clone(b); remote.rewards.k1.history[0].paid = true;
+  const m = mergeHousehold(b, local, remote);
+  eq(m.rewards.k1.history.length, 1);
+  eq(m.rewards.k1.history[0].paid, true);
+});
+test("the same redemption with its fields in a different order is still one redemption", () => {
+  const sorted = { cost: 55, date: X.date, name: X.name, paid: false };
+  const b = withHist([X]);
+  const local = clone(b); local.rewards.k1.points = 12;
+  const remote = withHist([sorted]); remote.rewards.k1.lastPunchDate = "Mon";
+  eq(mergeHousehold(b, local, remote).rewards.k1.history.length, 1);
+});
+test("repeats copied by the old bug collapse to one", () => {
+  const dupes = withHist([X, X, X, Object.assign({}, X, { paid: true }), X]);
+  const m = mergeHousehold(dupes, dupes, dupes);
+  eq(m.rewards.k1.history.length, 1);
+});
+test("redemptions made on two devices at once are both kept, newest first", () => {
+  const b = withHist([X]);
+  const local = clone(b); local.rewards.k1.history.unshift({ id: "hA", name: "TV", cost: 3, date: "Mon", paid: false }); local.rewards.k1.points = 7;
+  const remote = clone(b); remote.rewards.k1.history.unshift({ id: "hB", name: "Park", cost: 8, date: "Mon", paid: false }); remote.rewards.k1.points = 2;
+  const m = mergeHousehold(b, local, remote);
+  eq(m.rewards.k1.history.map((h) => h.id || h.name), ["hB", "hA", "h:Ice cream party|55|Fri Sep 18 2026"]);
+  eq(m.rewards.k1.points, 0); // 10 - 3 - 8, never below zero
+});
+test("a redemption deleted here stays deleted", () => {
+  const b = withHist([X, { id: "hA", name: "TV", cost: 3, date: "Mon", paid: false }]);
+  const local = clone(b); local.rewards.k1.history = local.rewards.k1.history.filter((h) => h.id !== "hA"); local.rewards.k1.points = 13;
+  const remote = clone(b); remote.rewards.k1.log = [{ date: "Mon", pointsEarned: 1, chores: [] }];
+  const m = mergeHousehold(b, local, remote);
+  eq(m.rewards.k1.history.map((h) => h.name), ["Ice cream party"]);
+  eq(m.rewards.k1.points, 13);
+});
+test("a new redemption made elsewhere survives a stale device's save", () => {
+  const b = withHist([X]);
+  const local = clone(b); ch(local, "a").lastDone = "Mon";
+  const remote = clone(b); remote.rewards.k1.history.unshift({ id: "hB", name: "Park", cost: 8, date: "Mon", paid: false }); remote.rewards.k1.points = 2;
+  const m = mergeHousehold(b, local, remote);
+  eq(m.rewards.k1.history.length, 2);
+  eq(m.rewards.k1.points, 2);
+});
+
 test("a first save with nothing saved yet just saves", () => {
   eq(mergeHousehold(undefined, BASE, undefined), BASE);
 });

@@ -111,7 +111,36 @@ const today = new Date().toDateString();
   await tablet.page.evaluate(() => { window.__offline = false; });
   check("a waiting change is also retried on a timer", await waitFor(() => !doneIn("Brush teeth"), 20000));
 
-  // ---- 4. each save is applied once
+  // ---- 4. redemptions: marked paid on the phone while the tablet is out of date
+  {
+    const d = be.doc("households/HH1");
+    d.rewards.k1.history = [{ name: "Ice cream party", cost: 55, date: "Fri Sep 18 2026", paid: false }];
+    be.put("households/HH1", d);
+    await sleep(800);
+    for (let round = 0; round < 3; round++) {
+      await tablet.page.evaluate(() => { window.__pauseSync = true; });
+      const x = be.doc("households/HH1"); x.rewards.k1.history = x.rewards.k1.history.map((h) => ({ ...h, paid: !h.paid })); be.put("households/HH1", x);
+      await sleep(400);
+      await tap(tablet, round % 2 ? "Make bed" : "Feed the dog");
+      await sleep(1200);
+      await tablet.page.evaluate(() => { window.__pauseSync = false; });
+      await sleep(700);
+    }
+    const h = be.doc("households/HH1").rewards.k1.history;
+    check("a redemption marked paid elsewhere is never copied by a stale device's save", h.length === 1, JSON.stringify(h));
+  }
+  // ---- 5. repeats left by the old bug disappear
+  {
+    const d = be.doc("households/HH1");
+    const X = { name: "Ice cream party", cost: 55, date: "Fri Sep 18 2026", paid: true };
+    d.rewards.k1.history = [X, X, X, X, X, { name: "TV", cost: 3, date: "Sat Sep 19 2026", paid: false }];
+    be.put("households/HH1", d);
+    check("the app shows each redemption once, even if the saved copy has repeats", await waitFor(() => phone.page.evaluate(() => /2 redemptions/.test(document.body.innerText)), 5000));
+    await tap(phone, "Make bed");
+    check("...and the next save removes the repeats for good", await waitFor(() => be.doc("households/HH1").rewards.k1.history.length === 2, 5000), JSON.stringify(be.doc("households/HH1").rewards.k1.history.length));
+  }
+
+  // ---- 6. each save is applied once
   const recent = be.doc("households/HH1")._recentWrites || [];
   check("saves are tagged so a repeat can't be applied twice", recent.length > 0 && new Set(recent).size === recent.length);
 

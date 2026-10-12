@@ -14,6 +14,11 @@ const { makeHandlers, Fail } = require(path.resolve(__dirname, "../../../firebas
 
 const DELETE = { __delete: true };
 const clone = (o) => JSON.parse(JSON.stringify(o));
+const sortKeys = (v) => {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === "object") { const o = {}; Object.keys(v).sort().forEach((k) => { o[k] = sortKeys(v[k]); }); return o; }
+  return v;
+};
 
 function applyUpdate(db, p, patch) {
   const cur = db.docs.get(p);
@@ -140,7 +145,8 @@ class Backend {
     if (op === "fs") {
       const { method, path: p, data, user } = a;
       if (!this.allowed(method === "get" ? "get" : "write", p, user)) return { error: { code: "permission-denied" } };
-      if (method === "get") return this.docs.has(p) ? { exists: true, data: clone(this.docs.get(p)) } : { exists: false };
+      // Like real Firestore, maps come back with their keys in alphabetical order.
+      if (method === "get") return this.docs.has(p) ? { exists: true, data: sortKeys(clone(this.docs.get(p))) } : { exists: false };
       if (method === "set") { this.docs.set(p, clone(data)); return { ok: true }; }
       if (method === "delete") { this.docs.delete(p); return { ok: true }; }
     }

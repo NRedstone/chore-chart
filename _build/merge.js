@@ -68,6 +68,44 @@
     return out;
   }
 
+  // Redemptions. Each one has an id (older ones get one made from their name,
+  // cost and date), so marking one paid on one device and saving from another
+  // is seen as the same redemption, not a new one. Exact repeats of an older,
+  // id-less redemption are collapsed into one.
+  function historyId(h) {
+    return h && h.id ? String(h.id) : "h:" + (h && h.name) + "|" + (h && h.cost) + "|" + (h && h.date);
+  }
+  function normHistory(list) {
+    var seen = {};
+    var out = [];
+    (list || []).forEach(function (h) {
+      if (!h || typeof h !== "object") return;
+      var id = historyId(h);
+      if (seen[id]) return;
+      seen[id] = true;
+      out.push(h.id ? h : Object.assign({ id: id }, h));
+    });
+    return out;
+  }
+  function mergeHistory(base, local, remote) {
+    var B = normHistory(base), L = normHistory(local), R = normHistory(remote);
+    var map = function (list) { var m = {}; list.forEach(function (h) { m[h.id] = h; }); return m; };
+    var Bm = map(B), Lm = map(L), Rm = map(R);
+    // Newest first: redemptions made elsewhere since this device's copy go on top.
+    var order = R.filter(function (h) { return !(h.id in Bm) && !(h.id in Lm); }).map(function (h) { return h.id; })
+      .concat(L.map(function (h) { return h.id; }))
+      .concat(R.filter(function (h) { return h.id in Bm && !(h.id in Lm); }).map(function (h) { return h.id; }));
+    var seen = {};
+    var out = [];
+    order.forEach(function (id) {
+      if (seen[id]) return;
+      seen[id] = true;
+      var v = mergeItem(Bm[id], Lm[id], Rm[id], mergeFields);
+      if (v !== undefined) out.push(v);
+    });
+    return out;
+  }
+
   // One kid's points and history.
   function mergeReward(b, l, r) {
     b = b || {};
@@ -90,11 +128,7 @@
       .filter(function (e) { return e !== undefined; })
       .sort(function (x, y) { return new Date(y.date) - new Date(x.date); })
       .slice(0, 60);
-    // Redemptions: everything this device has, plus anything new from elsewhere.
-    var known = {};
-    (b.history || []).concat(l.history || []).forEach(function (h) { known[JSON.stringify(h)] = true; });
-    var newElsewhere = (r.history || []).filter(function (h) { return !known[JSON.stringify(h)]; });
-    out.history = newElsewhere.concat(l.history || []);
+    out.history = mergeHistory(b.history, l.history, r.history);
     return out;
   }
 
@@ -120,7 +154,13 @@
     [base, local, remote].forEach(function (o) { Object.keys(o).forEach(function (k) { if (k.charAt(0) !== "_") keys[k] = true; }); });
     Object.keys(keys).forEach(function (k) {
       if (LISTS[k]) out[k] = mergeList(base[k], local[k], remote[k]);
-      else if (k === "rewards") out[k] = mergeRewards(base[k], local[k], remote[k]);
+      else if (k === "rewards") {
+        out[k] = mergeRewards(base[k], local[k], remote[k]);
+        Object.keys(out[k]).forEach(function (kid) {
+          var r = out[k][kid];
+          if (r && r.history) out[k][kid] = Object.assign({}, r, { history: normHistory(r.history) });
+        });
+      }
       else {
         var changedHere = !same(base[k], local[k]);
         var v = changedHere ? local[k] : remote[k];
@@ -130,7 +170,7 @@
     return out;
   }
 
-  var api = { mergeHousehold: mergeHousehold, mergeList: mergeList, mergeRewards: mergeRewards };
+  var api = { mergeHousehold: mergeHousehold, mergeList: mergeList, mergeRewards: mergeRewards, normHistory: normHistory };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.CCMerge = api;
 })(typeof window !== "undefined" ? window : this);

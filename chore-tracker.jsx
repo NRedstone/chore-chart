@@ -787,6 +787,10 @@ export default function ChoreTracker() {
     loadedKids.forEach((k) => {
       if (!loadedRewards[k.id]) loadedRewards[k.id] = defaultReward();
       else if (!loadedRewards[k.id].log) loadedRewards[k.id] = { ...loadedRewards[k.id], log: [] };
+      // Give older redemptions ids and drop exact repeats (a sync bug once copied them).
+      if (window.CCMerge && loadedRewards[k.id].history) {
+        loadedRewards[k.id] = { ...loadedRewards[k.id], history: window.CCMerge.normHistory(loadedRewards[k.id].history) };
+      }
     });
     setRewards(loadedRewards);
     setRewardsMenu(parsed.rewardsMenu || REWARD_MENU_STARTER);
@@ -1820,7 +1824,9 @@ export default function ChoreTracker() {
   function redeemReward(kidId, rewardItem) {
     const r = rewards[kidId] || defaultReward();
     if (r.points < rewardItem.cost) return;
-    const entry = { name: rewardItem.name, cost: rewardItem.cost, date: todayKey(), paid: false };
+    // Each redemption gets an id, so devices saving at the same time can tell
+    // one redemption from another (see merge.js).
+    const entry = { id: "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name: rewardItem.name, cost: rewardItem.cost, date: todayKey(), paid: false };
     // A 60-day window, not a fixed count — matches the daily log's own
     // effective cap, and scales naturally with how often a kid actually
     // redeems rather than reserving space for a fixed number up front.
