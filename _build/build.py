@@ -121,7 +121,7 @@ const { useState, useEffect, useMemo, useRef } = React;
         '<link rel="preconnect" href="https://fonts.googleapis.com" />\n'
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n'
         '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@600;700;800&family=Roboto:wght@500&display=swap" />\n'
-        "<style>\n  html, body { margin: 0; padding: 0; min-height: 100%; background: #FFFFFF; }\n"
+        "<style>\n  html, body { margin: 0; padding: 0; min-height: 100%; background: #F1F1F3; }\n"
         "  #root { min-height: 100vh; }\n</style>\n</head>\n<body>\n"
         '<div id="root"></div>\n\n'
         '<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>\n'

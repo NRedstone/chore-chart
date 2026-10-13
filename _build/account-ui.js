@@ -121,7 +121,7 @@
     if (kind === "setup") {
       // Sign-in and setup screens: a full white page with one centered column.
       var page = h("div", { role: "dialog", "aria-modal": "true",
-        style: "position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:" + FONT + ";color:#2B2250;" });
+        style: "position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#F1F1F3;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:" + FONT + ";color:#2B2250;" });
       var col = h("div", { style: "max-width:420px;min-height:100%;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;" +
         "padding:28px 24px 28px;padding-top:max(28px, env(safe-area-inset-top));padding-bottom:max(28px, env(safe-area-inset-bottom));" });
       page.appendChild(col);

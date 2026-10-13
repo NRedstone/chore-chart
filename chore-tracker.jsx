@@ -1975,8 +1975,7 @@ export default function ChoreTracker() {
   return (
     <div
       style={{
-        background:
-          "#FFFFFF",
+        background: "#F1F1F3", // light gray page; buttons and popups stay white
         minHeight: "100%",
         padding: "24px 20px 32px",
         fontFamily: "'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
@@ -2005,7 +2004,7 @@ export default function ChoreTracker() {
             position: "sticky",
             top: 0,
             zIndex: 100,
-            background: "rgba(255,255,255,0.5)",
+            background: "rgba(241,241,243,0.7)",
             backdropFilter: "blur(10px)",
             WebkitBackdropFilter: "blur(10px)",
             width: "100vw",
