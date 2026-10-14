@@ -2407,6 +2407,7 @@ export default function ChoreTracker() {
             }}
           >
             Not saved yet. Reconnecting… your change will save as soon as the connection is back.
+            {window.__ccLastSaveError && <span style={{ display: "block", fontSize: 11, opacity: 0.7, marginTop: 2 }}>({String(window.__ccLastSaveError)})</span>}
           </div>
         )}
 

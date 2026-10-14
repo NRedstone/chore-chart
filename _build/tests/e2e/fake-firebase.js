@@ -133,6 +133,13 @@
         enableNetwork: function () { return Promise.resolve(); },
         // Not truly atomic, which is fine for these tests: read, run, then write.
         runTransaction: function (fn) {
+          // Test switch: a transaction that never finishes, like one stuck on a dead connection.
+          if (window.__hangNextTransaction) { window.__hangNextTransaction = false; return new Promise(function () {}); }
+          // Test switch: a transaction that finishes, but only after this many ms.
+          if (window.__delayNextTransaction) {
+            var ms = window.__delayNextTransaction; window.__delayNextTransaction = 0;
+            return new Promise(function (r) { setTimeout(r, ms); }).then(function () { return window.firebase.firestore().runTransaction(fn); });
+          }
           var pending = null;
           var tx = { get: function (ref) { return ref.get(); }, set: function (ref, d) { pending = [ref, d]; } };
           return Promise.resolve(fn(tx)).then(function (result) {

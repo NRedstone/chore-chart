@@ -140,9 +140,57 @@ const today = new Date().toDateString();
     check("...and the next save removes the repeats for good", await waitFor(() => be.doc("households/HH1").rewards.k1.history.length === 2, 5000), JSON.stringify(be.doc("households/HH1").rewards.k1.history.length));
   }
 
-  // ---- 6. each save is applied once
-  const recent = be.doc("households/HH1")._recentWrites || [];
-  check("saves are tagged so a repeat can't be applied twice", recent.length > 0 && new Set(recent).size === recent.length);
+  // Puts the household in a known state and waits until both devices show it.
+  async function reset(points) {
+    const d = be.doc("households/HH1");
+    d.chores = d.chores.filter((c) => c.category !== "BONUS").map((c) => ({ ...c, lastDone: null }));
+    d.rewards.k1.points = points;
+    d.rewards.k1.lastPunchDate = null;
+    be.put("households/HH1", d);
+    for (const x of [tablet, phone]) await waitFor(() => x.page.evaluate(() => document.querySelectorAll('button[aria-label="Mark not done"]').length === 0), 6000);
+    await sleep(1500); // let any automatic saves settle
+  }
+
+  // ---- 6. one save stuck forever must not block the ones after it
+  await reset(10);
+  await tablet.page.evaluate(() => { window.__hangNextTransaction = true; });
+  await tap(tablet, "Get dressed"); // this save hangs and never finishes
+  await sleep(1000);
+  await tap(tablet, "Brush teeth");
+  check("after a save gets stuck, later changes still save", await waitFor(() => doneIn("Brush teeth"), 45000));
+  check("...including the stuck change itself", await waitFor(() => doneIn("Get dressed"), 45000));
+  check("...and the banner clears", await tablet.page.waitForSelector("#cc-save-banner", { state: "detached", timeout: 30000 }).then(() => true, () => false));
+
+  // ---- 7. each save is applied once
+  const applied = be.doc("households/HH1")._applied || {};
+  check("saves are numbered per device so a repeat can't be applied twice", Object.keys(applied).length >= 2);
+
+  // ---- 8. a save that finishes late (after the app gave up on it) isn't counted twice,
+  // and a change arriving from another device meanwhile doesn't make the unsaved tap look undone
+  {
+    await reset(20);
+    const d = be.doc("households/HH1");
+    d.chores.push({ ...d.chores[0], id: "bonus1", name: "Unload dishwasher", category: "BONUS", points: 2, lastDone: null });
+    be.put("households/HH1", d);
+    await waitFor(() => tablet.page.evaluate(() => document.body.innerText.includes("Unload dishwasher")), 5000);
+    await sleep(1500);
+    const before = be.doc("households/HH1").rewards.k1.points;
+    await tablet.page.evaluate(() => { window.__delayNextTransaction = 22000; });
+    await tap(tablet, "Unload dishwasher"); // +2 points, but this save is very slow
+    await sleep(800);
+    await tap(phone, "Feed the dog"); // meanwhile the phone saves something
+    await sleep(1500);
+    check("an unsaved tap stays checked when another device's change arrives", await tablet.page.evaluate(() => {
+      const label = [...document.querySelectorAll("*")].find((el) => el.children.length === 0 && el.textContent.trim() === "Unload dishwasher");
+      let x = label; while (x && !(x.querySelector && x.querySelector("button[aria-label]"))) x = x.parentElement;
+      return !!x.querySelector('button[aria-label="Mark not done"]');
+    }));
+    await tap(tablet, "Make bed"); // another change on the tablet while the slow save is still going
+    await sleep(32000); // the slow save finishes late
+    const after = be.doc("households/HH1").rewards.k1.points;
+    check("the bonus points are counted exactly once", after === before + 2, "before " + before + " after " + after);
+    check("every change is saved", doneIn("Unload dishwasher") && doneIn("Make bed") && doneIn("Feed the dog"));
+  }
 
   const errs = [tablet, phone].flatMap((x) => x.errors);
   results.forEach((r) => console.log((r.ok ? "  ok   " : "  FAIL ") + r.name + (r.ok || !r.extra ? "" : "   [" + r.extra + "]")));

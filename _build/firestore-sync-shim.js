@@ -121,9 +121,12 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
   // screen in between, in which case the bases are left alone.
   let uiBase;
   let uiVersion = 0;
+  let uiBaseSeq = 0; // the newest save of THIS device that uiBase already includes
   let editBase;
   let editVersion = 0;
+  let editBaseSeq = 0;
   let queue = Promise.resolve();
+  let inFlight = 0;
   const strip = (d) => {
     const out = {};
     Object.keys(d || {}).forEach((k) => {
@@ -131,31 +134,77 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     });
     return out;
   };
-  const newWriteId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+  // Every save from this device gets a number that only ever goes up (it's
+  // based on the clock, so it keeps going up across reloads). The saved
+  // household remembers the newest number it has applied from each device
+  // (_applied). That makes a save that finishes late, after the app gave up
+  // on it and moved on, harmless: it's never applied twice, and newer saves
+  // measure their changes from it instead of counting them again.
+  const deviceKey = (session.user && session.user.uid) || "device";
+  let lastSeq = 0;
+  let lastValue = null;
+  let lastValueSeq = 0;
+  const sent = {}; // seq -> what that save contained
+  const sentBase = {}; // seq -> the copy it was measured against
+  // The newest change handed to set() that isn't confirmed saved yet. While
+  // there is one, copies arriving from other devices are shown with it
+  // merged in, so an unsaved tap never looks undone.
+  let unconfirmed = null;
+  // A change's number and the copy it was made to are fixed the first time
+  // it's handed over; a retry of the same change reuses both (measuring an
+  // old change against a newer copy would make it undo things).
+  let lastMeta = null;
+  function metaFor(value) {
+    if (value === lastValue && lastMeta) return lastMeta;
+    lastSeq = Math.max(Date.now(), lastSeq + 1);
+    lastValue = value;
+    lastValueSeq = lastSeq;
+    lastMeta = { seq: lastSeq, base: editBase, baseSeq: editBaseSeq, version: editVersion };
+    return lastMeta;
+  }
+  const lastValueSeqFor = (value) => (value === lastValue ? lastValueSeq : Infinity);
+  const appliedFrom = (d) => (d && d._applied && d._applied[deviceKey]) || 0;
 
   // One save, done as a transaction: read what's saved now, merge this
   // device's changes into it, write the result. It needs the server, so it
-  // fails instead of queueing a stale copy to go out later. A save that was
-  // already applied (its id is in _recentWrites) is never applied twice.
-  async function saveMerged(value) {
+  // fails instead of queueing a stale copy to go out later.
+  async function saveMerged(value, meta) {
     const local = JSON.parse(value);
-    const base = editBase;
-    const usedVersion = editVersion;
+    const seq = meta.seq;
+    sent[seq] = local;
+    sentBase[seq] = meta.base;
+    Object.keys(sent).map(Number).sort((x, y) => y - x).slice(20).forEach((k) => {
+      delete sent[k];
+      delete sentBase[k];
+    });
+    const base = meta.base;
+    const baseSeq = meta.baseSeq;
+    const usedVersion = meta.version;
     const uiVersionAtStart = uiVersion;
-    const writeId = newWriteId();
     const merged = await db.runTransaction(async (tx) => {
       const snap = await tx.get(docRef);
       const remote = snap.exists ? snap.data() : undefined;
-      const recent = (remote && remote._recentWrites) || [];
-      if (recent.indexOf(writeId) !== -1) return remote;
-      const result = window.CCMerge.mergeHousehold(base ? strip(base) : undefined, local, remote ? strip(remote) : undefined);
-      result._recentWrites = [writeId].concat(recent).slice(0, 20);
+      const applied = appliedFrom(remote);
+      if (applied >= seq) return remote; // already saved (an earlier attempt finished late)
+      // A save of ours that went through after this change's starting copy
+      // (one that finished late, say) is part of what this change builds on:
+      // measure from "starting copy + that save's changes", so nothing in it
+      // is counted twice.
+      let effBase = base;
+      if (applied > baseSeq && sent[applied]) {
+        effBase = window.CCMerge.mergeHousehold(strip(sentBase[applied] || {}), sent[applied], strip(base || {}));
+      }
+      const result = window.CCMerge.mergeHousehold(effBase ? strip(effBase) : undefined, local, remote ? strip(remote) : undefined);
+      result._applied = Object.assign({}, (remote && remote._applied) || {});
+      result._applied[deviceKey] = seq;
       tx.set(docRef, result);
       return result;
     });
     // The screen now matches what was just saved, unless a newer copy arrived meanwhile.
-    if (editVersion === usedVersion) editBase = local;
-    if (uiVersion === uiVersionAtStart) uiBase = local;
+    // (A save that finished late, after a newer one, doesn't move the bases back.)
+    if (editVersion === usedVersion && seq > editBaseSeq) { editBase = local; editBaseSeq = seq; }
+    if (uiVersion === uiVersionAtStart && seq > uiBaseSeq) { uiBase = local; uiBaseSeq = seq; }
     return merged;
   }
 
@@ -174,6 +223,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       }
       if (!snap.exists) return null;
       uiBase = strip(snap.data());
+      uiBaseSeq = appliedFrom(snap.data());
       uiVersion++;
       return { key, value: JSON.stringify(uiBase), shared: true };
     },
@@ -181,16 +231,34 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     // which copy the change was made to.
     beginEdit() {
       editBase = uiBase;
+      editBaseSeq = uiBaseSeq;
       editVersion = uiVersion;
     },
-    // Saves run one at a time, in order (an earlier one that's still waiting
-    // on a slow connection finishes, or fails, before the next one starts).
+    // Saves run one at a time, in order. Each one gets at most 15 seconds:
+    // a save stuck on a bad connection (it may never finish) must not hold up
+    // the ones after it. If it does finish later, _applied keeps it from
+    // being counted twice.
     set(key, value) {
-      const run = queue.then(() => saveMerged(value));
-      queue = run.catch(() => {});
-      return run.then(
-        (merged) => ({ key, value: JSON.stringify(strip(merged)), shared: true }),
+      const meta = metaFor(value);
+      unconfirmed = { value, base: meta.base };
+      const attempt = queue.then(() => {
+        inFlight++;
+        const run = saveMerged(value, meta);
+        run.then(() => inFlight--, () => inFlight--);
+        return Promise.race([
+          run,
+          new Promise((_, reject) => setTimeout(() => reject({ code: "timeout" }), 15000)),
+        ]);
+      });
+      queue = attempt.catch(() => {});
+      return attempt.then(
+        (merged) => {
+          if (unconfirmed && unconfirmed.value === value) unconfirmed = null;
+          window.__ccLastSaveError = null;
+          return { key, value: JSON.stringify(strip(merged)), shared: true };
+        },
         (e) => {
+          window.__ccLastSaveError = (e && e.code) || "error";
           lost(e);
           return null;
         }
@@ -228,7 +296,8 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         }),
         new Promise((resolve) => setTimeout(() => resolve(false), 8000)),
       ]);
-      if (!ok) {
+      // Don't tear the connection down in the middle of a save (that can leave it stuck).
+      if (!ok && inFlight === 0) {
         await db.disableNetwork().catch(() => {});
         await db.enableNetwork().catch(() => {});
         window.__ccReconnects = (window.__ccReconnects || 0) + 1;
@@ -252,8 +321,16 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       (snap) => {
         if (!snap.exists) return;
         uiBase = strip(snap.data());
+        uiBaseSeq = appliedFrom(snap.data());
         uiVersion++;
-        callback(JSON.parse(JSON.stringify(uiBase)));
+        if (unconfirmed && appliedFrom(snap.data()) < lastValueSeqFor(unconfirmed.value)) {
+          // Show the arriving copy with this device's unsaved change merged in.
+          const pending = JSON.parse(unconfirmed.value);
+          callback(window.CCMerge.mergeHousehold(strip(unconfirmed.base || {}), pending, JSON.parse(JSON.stringify(uiBase))));
+        } else {
+          if (unconfirmed) unconfirmed = null; // it's already in there
+          callback(JSON.parse(JSON.stringify(uiBase)));
+        }
       },
       (err) => {
         console.error("Sync error:", err);
