@@ -3746,17 +3746,45 @@ export default function ChoreTracker() {
                 ) : (
                   <>
                     <div style={{ fontSize: 13, color: "#8A82C0", fontWeight: 700, marginBottom: 6 }}>Choose a reward</div>
-                    <select
-                      value={selected?.id}
-                      onChange={(e) => setSelectedRewardId(e.target.value)}
-                      style={{ width: "100%", padding: "11px 14px", borderRadius: 12, border: "2px solid #E2DBFA", fontSize: 15, fontFamily: "inherit", fontWeight: 600, marginBottom: 14 }}
-                    >
-                      {rewardsMenu.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} — {item.cost} pts
-                        </option>
-                      ))}
-                    </select>
+                    {/* The app's own list, not the device's dropdown: the iPad's system
+                        dropdown can leave a ghost image of itself painted on the screen. */}
+                    <div id="cc-reward-list" role="radiogroup" aria-label="Choose a reward" style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "40vh", overflowY: "auto", marginBottom: 14, padding: 2 }}>
+                      {rewardsMenu.map((item) => {
+                        const isSel = selected && selected.id === item.id;
+                        const canAfford = r.points >= item.cost;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSel}
+                            onClick={() => setSelectedRewardId(item.id)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              width: "100%",
+                              minHeight: 48,
+                              padding: "10px 14px",
+                              borderRadius: 14,
+                              border: isSel ? `2px solid ${color}` : "2px solid #E2DBFA",
+                              background: isSel ? "#F8F6FE" : "#FFFFFF",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              opacity: canAfford ? 1 : 0.6,
+                            }}
+                          >
+                            <span style={{ width: 18, height: 18, flexShrink: 0, borderRadius: "50%", border: isSel ? `6px solid ${color}` : "2px solid #CFC6F0", boxSizing: "border-box", background: "#FFFFFF" }} />
+                            <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: "#2B2250", lineHeight: 1.3 }}>{item.name}</span>
+                            <span style={{ flexShrink: 0, textAlign: "right" }}>
+                              <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: "#2B2250" }}>{item.cost} pts</span>
+                              {!canAfford && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#FF5A5F" }}>needs {item.cost - r.points} more</span>}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
 
                     {selected && (
                       <div style={{ fontSize: 13, color: affordable ? "#4ECB71" : "#FF5A5F", fontWeight: 700, marginBottom: 14 }}>

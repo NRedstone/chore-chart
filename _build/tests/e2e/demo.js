@@ -73,6 +73,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const saved = await d.page.evaluate(() => window.storage.get("x").then((r) => JSON.parse(r.value)));
   check("checking off a chore works", saved.chores.find((c) => c.name === "Pack school bag").lastDone === new Date().toDateString());
 
+  // redeeming: a tappable list (no system dropdown, which leaves ghosts on iPads)
+  await d.page.locator('button:has-text("Redeem")').first().click();
+  await d.page.waitForSelector("#cc-reward-list");
+  check("the reward picker is the app's own list, not a dropdown", (await d.page.$$("#cc-reward-list button")).length === 5 && !(await d.page.$("#cc-reward-list select")) && (await d.page.$$("select")).length === 0);
+  if (process.env.SHOTS_DIR) await d.page.screenshot({ path: path.join(process.env.SHOTS_DIR, "redeem.png") });
+  await d.page.click('#cc-reward-list button:has-text("Pick dinner")');
+  check("tapping a reward selects it", (await d.page.getAttribute('#cc-reward-list button:has-text("Pick dinner")', "aria-checked")) === "true");
+  await d.page.locator('button:has-text("Redeem")').last().click();
+  await sleep(600);
+  const afterRedeem = await d.page.evaluate(() => window.storage.get("x").then((r) => JSON.parse(r.value)));
+  check("redeeming takes the points and records it", afterRedeem.rewards.maya.points === 9 && afterRedeem.rewards.maya.history[0].name === "Pick dinner", JSON.stringify(afterRedeem.rewards.maya.points));
+  await d.page.click('button[aria-label="Close"]').catch(() => {});
+  await sleep(300);
+  await d.page.locator('button:has-text("Redeem")').first().click();
+  await d.page.waitForSelector("#cc-reward-list");
+  check("a reward the kid can't afford yet says how many more points", (await d.page.textContent('#cc-reward-list button:has-text("Ice cream outing")')).includes("needs 1 more"));
+  if (process.env.SHOTS_DIR) await d.page.screenshot({ path: path.join(process.env.SHOTS_DIR, "redeem.png") });
+  await d.page.keyboard.press("Escape").catch(() => {});
+  await d.page.click('button[aria-label="Close"]').catch(() => {});
+
   // parent controls with the PIN from the banner
   await d.page.click('button[aria-label="Unlock parent controls"]');
   await d.page.click("#cc-forgot-pin");
