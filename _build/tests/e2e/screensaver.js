@@ -27,7 +27,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   const be = new Backend();
   be.put("households/ABC234", SEED);
-  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--no-sandbox"] });
+  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
   const ctx = await browser.newContext({ viewport: { width: Number(process.env.VW || 820), height: Number(process.env.VH || 1100) }, hasTouch: true, isMobile: true });
   await ctx.exposeFunction("__be", (op, a) => be.rpc(op, a));
   await ctx.addInitScript(fakeFirebase);

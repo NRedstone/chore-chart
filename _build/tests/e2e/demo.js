@@ -22,7 +22,7 @@ const check = (name, cond, extra) => results.push({ name, ok: !!cond, extra });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--no-sandbox"] });
+  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
   const firebaseCalls = [];
   async function open(viewport, url) {
     const ctx = await browser.newContext({ viewport, deviceScaleFactor: SHOTS ? 2 : 1 });

@@ -33,7 +33,7 @@ const today = new Date().toDateString();
 (async () => {
   const be = new Backend();
   be.put("households/HH1", SEED);
-  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--no-sandbox"] });
+  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
   async function device(label) {
     const ctx = await browser.newContext({ viewport: { width: 430, height: 900 } });
     await ctx.exposeFunction("__be", (op, a) => be.rpc(op, a));

@@ -120,7 +120,7 @@ const confirmBtn = (d, key) => d.page.click(`button[data-confirm="${key}"]`);
 const clickLabel = (d, label) => d.page.click(`#cc-devices button:has-text("${label}")`);
 
 (async () => {
-  browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", args: ["--no-sandbox"] });
+  browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
   // A household that already has an owner (g_owner), with some chores.
   be.put("households/ABC234", SEED);
   be.put("access/ABC234", { ownerUid: "g_owner", ownerEmail: "owner@gmail.com", devices: {}, linkCodes: {}, pendingTransfer: null, minAuthTime: 0, createdAt: Date.now() });
