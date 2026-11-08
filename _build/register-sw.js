@@ -87,6 +87,25 @@
   }
   window.__ccSimulateUpdateReady = updateReady; // for tests
 
+// Is there really a newer version on the server? A tablet can throw away and
+  // reinstall the service worker on its own (iPads do this now and then),
+  // which looks exactly like an update even though nothing changed. Treating
+  // that as an update meant a "new version" banner and an automatic reload
+  // every couple of idle minutes, so the screen saver never got its turn.
+  // Compare the server's version number with this page's before acting.
+  function serverHasNewerVersion() {
+    var mine = window.__ccBuildId;
+    if (!mine || !window.fetch) return Promise.resolve(true);
+    return fetch("./sw.js", { cache: "no-store" })
+      .then(function (res) { return res.ok ? res.text() : ""; })
+      .then(function (text) {
+        var m = /const BUILD = "([^"]+)"/.exec(text || "");
+        return !!(m && m[1] !== mine);
+      })
+      .catch(function () { return false; });
+  }
+  window.__ccServerHasNewerVersion = serverHasNewerVersion; // for tests
+
   if (!("serviceWorker" in navigator)) return;
 
   // Only a *replacement* counts as an update — the very first install, when
@@ -98,8 +117,12 @@
       window.location.reload();
       return;
     }
-    if (hadController) updateReady();
+    var wasControlled = hadController;
     hadController = true;
+    if (!wasControlled) return;
+    serverHasNewerVersion().then(function (newer) {
+      if (newer) updateReady();
+    });
   });
 
   // "Check for updates" in Settings: resolves "updating" (the page reloads by

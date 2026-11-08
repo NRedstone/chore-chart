@@ -27,6 +27,7 @@ const check = (name, cond, extra) => results.push({ name, ok: !!cond, extra });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
+  let swBody = null; // what the server's sw.js says (null = not found)
   const be = new Backend();
   be.put("households/ABC234", SEED);
   const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
@@ -38,7 +39,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const url = route.request().url();
     if (url.startsWith("http://app.test/")) {
       if (url.includes("/blank")) return route.fulfill({ status: 200, contentType: "text/html", body: "<html></html>" });
-      if (url.endsWith("sw.js")) return route.fulfill({ status: 404, body: "" });
+      if (url.endsWith("sw.js")) return swBody === null ? route.fulfill({ status: 404, body: "" }) : route.fulfill({ status: 200, contentType: "application/javascript", body: swBody });
       return route.fulfill({ status: 200, contentType: "text/html", body: appHtml });
     }
     if (url.includes("gstatic.com/firebasejs")) return route.fulfill({ status: 200, contentType: "application/javascript", body: "//" });
@@ -115,6 +116,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   reloaded = false;
   try { await page.waitForFunction(() => window.__sameLoad !== true, null, { timeout: 4000 }); reloaded = true; } catch (e) {}
   check("while the clock screen saver is showing, it updates right away", reloaded);
+
+  // ---- only a real new version counts (a tablet reinstalling the same one must not)
+  {
+    const mine = await page.evaluate(() => window.__ccBuildId);
+    swBody = 'const BUILD = "' + mine + '";';
+    check("the same version on the server is NOT treated as an update", (await page.evaluate(() => window.__ccServerHasNewerVersion())) === false);
+    swBody = 'const BUILD = "20991231-000000";';
+    check("a different version on the server is", (await page.evaluate(() => window.__ccServerHasNewerVersion())) === true);
+    swBody = null;
+    check("if the server can't be asked, it isn't treated as an update", (await page.evaluate(() => window.__ccServerHasNewerVersion())) === false);
+  }
 
   results.forEach((r) => console.log((r.ok ? "  ok   " : "  FAIL ") + r.name + (r.ok || !r.extra ? "" : "   [" + String(r.extra).slice(0, 140) + "]")));
   const failed = results.filter((r) => !r.ok).length;
