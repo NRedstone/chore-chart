@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-11-08 04:23 UTC"; window.__ccBuildId = "20261108-042357";</script>
+<script>window.__ccBuild = "2026-11-10 03:15 UTC"; window.__ccBuildId = "20261110-031513";</script>
 
 <script>
 // Three-way merge for saving the household.
@@ -3105,7 +3105,8 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         freq: c.freq,
         dueDay: typeof c.dueDay === "number" ? c.dueDay : null,
         dueDate: c.dueDate || "",
-        points: typeof c.points === "number" ? c.points : 5,
+        points: typeof c.points === "number" ? c.points : 0,
+        // no points set = it pays 0; editing must not change that
         days: c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? resolveDays(c) : [0, 1, 2, 3, 4, 5, 6]
       });
       setEditingId(c.id);

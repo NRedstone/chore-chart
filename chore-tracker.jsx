@@ -1593,7 +1593,7 @@ export default function ChoreTracker() {
       freq: c.freq,
       dueDay: typeof c.dueDay === "number" ? c.dueDay : null,
       dueDate: c.dueDate || "",
-      points: typeof c.points === "number" ? c.points : 5,
+      points: typeof c.points === "number" ? c.points : 0, // no points set = it pays 0; editing must not change that
       days: c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? resolveDays(c) : [0, 1, 2, 3, 4, 5, 6],
     });
     setEditingId(c.id);

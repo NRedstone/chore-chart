@@ -22,6 +22,7 @@ const chore = (id, name, category) => ({ id, name, kidId: "k1", category, freq: 
 const chores = [];
 for (let i = 1; i <= 12; i++) chores.push(chore("am" + i, "Morning task " + i, "AM"));
 for (let i = 1; i <= 12; i++) chores.push(chore("pm" + i, "Evening task " + i, "PM"));
+delete chores[chores.length - 1].points; // an older chore, saved before chores had their own points
 const SEED = { kids: [{ id: "k1", name: "Jack" }], chores, rewards: { k1: { points: 0, lastPunchDate: null, history: [], log: [] } }, rewardsMenu: [], parentPin: "1234", dailyPointValue: 1 };
 
 const results = [];
@@ -115,9 +116,13 @@ const check = (name, cond, extra) => results.push({ name, ok: !!cond, extra });
   await pencil.click();
   await page.waitForSelector('[role="dialog"][aria-label="Edit chore"]');
   check("the pencil opens Edit as a popup in place", (await scrollY()) === (await yAtClick()));
+  check("editing an older chore with no points set shows 0 points, not 5", (await page.inputValue('[role="dialog"] input[type="number"]')) === "0");
   await page.fill('[role="dialog"] input[placeholder="Chore name"]', "Evening task renamed");
   await page.click('[role="dialog"] button:text-is("Save changes")');
   check("Save changes works and closes it", (await gone()) && (await page.isVisible("text=Evening task renamed")));
+  await page.waitForTimeout(800);
+  const edited = be.doc("households/ABC234").chores.find((c) => c.id === "pm12");
+  check("...and the chore is still worth 0 points", edited && (edited.points || 0) === 0, JSON.stringify(edited && edited.points));
 
   results.forEach((r) => console.log((r.ok ? "  ok   " : "  FAIL ") + r.name + (r.ok || !r.extra ? "" : "   [" + r.extra + "]")));
   const failed = results.filter((r) => !r.ok).length;
