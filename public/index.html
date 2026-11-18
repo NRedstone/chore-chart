@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-11-10 03:15 UTC"; window.__ccBuildId = "20261110-031513";</script>
+<script>window.__ccBuild = "2026-11-18 18:09 UTC"; window.__ccBuildId = "20261118-180909";</script>
 
 <script>
 // Three-way merge for saving the household.
@@ -2807,6 +2807,55 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       });
       lastInteractionRef.current = Date.now();
     }
+    const wakeLockSupported = typeof navigator !== "undefined" && !!navigator.wakeLock;
+    const [keepAwake, setKeepAwake] = useState(() => {
+      try {
+        return localStorage.getItem("cc-keep-awake") === "1";
+      } catch (e) {
+        return false;
+      }
+    });
+    const [wakeStatus, setWakeStatus] = useState("off");
+    function updateKeepAwake(on) {
+      setKeepAwake(on);
+      try {
+        localStorage.setItem("cc-keep-awake", on ? "1" : "0");
+      } catch (e) {
+      }
+    }
+    useEffect(() => {
+      if (!keepAwake || !wakeLockSupported) {
+        setWakeStatus("off");
+        return;
+      }
+      let lock = null;
+      let stopped = false;
+      async function acquire() {
+        if (stopped || document.visibilityState !== "visible" || lock && !lock.released) return;
+        try {
+          lock = await navigator.wakeLock.request("screen");
+          setWakeStatus("on");
+          lock.addEventListener("release", () => {
+            if (!stopped) setTimeout(acquire, 1e3);
+          });
+        } catch (e) {
+          setWakeStatus("failed");
+        }
+      }
+      const onVisible = () => {
+        if (document.visibilityState === "visible") acquire();
+      };
+      acquire();
+      document.addEventListener("visibilitychange", onVisible);
+      document.addEventListener("pointerdown", acquire, { passive: true });
+      return () => {
+        stopped = true;
+        document.removeEventListener("visibilitychange", onVisible);
+        document.removeEventListener("pointerdown", acquire);
+        if (lock && !lock.released) lock.release().catch(() => {
+        });
+      };
+    }, [keepAwake, wakeLockSupported]);
     const screensaverPrefRef = useRef(screensaverPref);
     screensaverPrefRef.current = screensaverPref;
     const [screensaver, setScreensaver] = useState(false);
@@ -4049,7 +4098,19 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
             style: { marginTop: 14, padding: "9px 16px", borderRadius: 12, border: "2px solid #E2DBFA", background: "#FFFFFF", color: "#5D5490", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }
           },
           "Show it now"
-        )), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 16, padding: "10px 12px", borderRadius: 12, background: "#F6F3FF", fontSize: 12.5, fontWeight: 600, color: "#5D5490", lineHeight: 1.5 } }, "This setting is just for this device, so you can turn it on for a wall tablet and leave phones alone. On an iPad, set Settings, Display & Brightness, Auto-Lock to Never, or the screen will switch off before the clock appears.")),
+        )), /* @__PURE__ */ React.createElement("div", { id: "cc-keep-awake", style: { display: "flex", alignItems: "center", gap: 12, marginTop: 18, paddingTop: 16, borderTop: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 800, color: "#2B2250" } }, "Keep this screen on"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", lineHeight: 1.5, marginTop: 2 } }, !wakeLockSupported ? "This device's browser can't do this. Use its own display settings to keep the screen on." : keepAwake && wakeStatus === "on" ? "On: while the chart is open, the screen won't switch off." : keepAwake && wakeStatus === "failed" ? "Couldn't keep the screen on yet. Tap anywhere on the chart and it will try again." : "While the chart is open, the screen never switches off. Best for a plugged-in wall tablet.")), /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            className: "cc-btn",
+            role: "switch",
+            "aria-checked": keepAwake && wakeLockSupported,
+            "aria-label": "Keep this screen on",
+            disabled: !wakeLockSupported,
+            onClick: () => updateKeepAwake(!keepAwake),
+            style: { width: 52, height: 30, borderRadius: 999, border: "none", background: keepAwake && wakeLockSupported ? "#4ECB71" : "#D9D3F2", position: "relative", cursor: wakeLockSupported ? "pointer" : "not-allowed", flexShrink: 0, padding: 0, opacity: wakeLockSupported ? 1 : 0.5 }
+          },
+          /* @__PURE__ */ React.createElement("span", { style: { position: "absolute", top: 3, left: keepAwake && wakeLockSupported ? 25 : 3, width: 24, height: 24, borderRadius: "50%", background: "#FFFFFF", boxShadow: "0 1px 3px rgba(0,0,0,0.25)", transition: "left 0.15s" } })
+        )), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 16, padding: "10px 12px", borderRadius: 12, background: "#F6F3FF", fontSize: 12.5, fontWeight: 600, color: "#5D5490", lineHeight: 1.5 } }, `These settings are just for this device, so you can turn them on for a wall tablet and leave phones alone. If "Keep this screen on" isn't available, set the tablet's own screen timeout as long as it goes (on an iPad: Settings, Display & Brightness, Auto-Lock, Never).`)),
         settingsTab === "devices" && window.CCAccount && /* @__PURE__ */ React.createElement(DevicesTab, null),
         settingsTab === "household" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(WeatherLocationSettings, { location, onSave: saveLocation, btnStyle: BACKUP_BTN_STYLE }), /* @__PURE__ */ React.createElement("div", { id: "cc-pin-section", style: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, paddingBottom: 14, marginBottom: 14, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 160 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, color: "#7B61FF" } }, "Parent PIN"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2, lineHeight: 1.5 } }, parentPin ? "Unlocks Settings, editing and approvals on every device." : "No PIN yet, so anyone can unlock parent controls.")), /* @__PURE__ */ React.createElement(
           "button",

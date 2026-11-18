@@ -1199,6 +1199,59 @@ export default function ChoreTracker() {
     });
     lastInteractionRef.current = Date.now();
   }
+  // "Keep this screen on" (per device): while the chart is open and in view,
+  // ask the browser not to let the screen switch off (Screen Wake Lock), so a
+  // plugged-in wall tablet needs no special display settings. The browser
+  // drops the lock whenever the app is hidden, so it's taken again on return.
+  const wakeLockSupported = typeof navigator !== "undefined" && !!navigator.wakeLock;
+  const [keepAwake, setKeepAwake] = useState(() => {
+    try {
+      return localStorage.getItem("cc-keep-awake") === "1";
+    } catch (e) {
+      return false;
+    }
+  });
+  const [wakeStatus, setWakeStatus] = useState("off"); // off | on | failed
+  function updateKeepAwake(on) {
+    setKeepAwake(on);
+    try {
+      localStorage.setItem("cc-keep-awake", on ? "1" : "0");
+    } catch (e) {}
+  }
+  useEffect(() => {
+    if (!keepAwake || !wakeLockSupported) {
+      setWakeStatus("off");
+      return;
+    }
+    let lock = null;
+    let stopped = false;
+    async function acquire() {
+      if (stopped || document.visibilityState !== "visible" || (lock && !lock.released)) return;
+      try {
+        lock = await navigator.wakeLock.request("screen");
+        setWakeStatus("on");
+        lock.addEventListener("release", () => {
+          if (!stopped) setTimeout(acquire, 1000); // the system let go: take it again when we can
+        });
+      } catch (e) {
+        setWakeStatus("failed");
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+    acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    // Some browsers only allow it after a tap: try again on the next one.
+    document.addEventListener("pointerdown", acquire, { passive: true });
+    return () => {
+      stopped = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("pointerdown", acquire);
+      if (lock && !lock.released) lock.release().catch(() => {});
+    };
+  }, [keepAwake, wakeLockSupported]);
+
   const screensaverPrefRef = useRef(screensaverPref);
   screensaverPrefRef.current = screensaverPref;
   const [screensaver, setScreensaver] = useState(false);
@@ -2761,8 +2814,33 @@ export default function ChoreTracker() {
                       </button>
                     </>
                   )}
+                  <div id="cc-keep-awake" style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 18, paddingTop: 16, borderTop: "1.5px solid #F1EDFF" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#2B2250" }}>Keep this screen on</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: "#8A82C0", lineHeight: 1.5, marginTop: 2 }}>
+                        {!wakeLockSupported
+                          ? "This device's browser can't do this. Use its own display settings to keep the screen on."
+                          : keepAwake && wakeStatus === "on"
+                          ? "On: while the chart is open, the screen won't switch off."
+                          : keepAwake && wakeStatus === "failed"
+                          ? "Couldn't keep the screen on yet. Tap anywhere on the chart and it will try again."
+                          : "While the chart is open, the screen never switches off. Best for a plugged-in wall tablet."}
+                      </div>
+                    </div>
+                    <button
+                      className="cc-btn"
+                      role="switch"
+                      aria-checked={keepAwake && wakeLockSupported}
+                      aria-label="Keep this screen on"
+                      disabled={!wakeLockSupported}
+                      onClick={() => updateKeepAwake(!keepAwake)}
+                      style={{ width: 52, height: 30, borderRadius: 999, border: "none", background: keepAwake && wakeLockSupported ? "#4ECB71" : "#D9D3F2", position: "relative", cursor: wakeLockSupported ? "pointer" : "not-allowed", flexShrink: 0, padding: 0, opacity: wakeLockSupported ? 1 : 0.5 }}
+                    >
+                      <span style={{ position: "absolute", top: 3, left: keepAwake && wakeLockSupported ? 25 : 3, width: 24, height: 24, borderRadius: "50%", background: "#FFFFFF", boxShadow: "0 1px 3px rgba(0,0,0,0.25)", transition: "left 0.15s" }} />
+                    </button>
+                  </div>
                   <div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 12, background: "#F6F3FF", fontSize: 12.5, fontWeight: 600, color: "#5D5490", lineHeight: 1.5 }}>
-                    This setting is just for this device, so you can turn it on for a wall tablet and leave phones alone. On an iPad, set Settings, Display &amp; Brightness, Auto-Lock to Never, or the screen will switch off before the clock appears.
+                    These settings are just for this device, so you can turn them on for a wall tablet and leave phones alone. If "Keep this screen on" isn't available, set the tablet's own screen timeout as long as it goes (on an iPad: Settings, Display &amp; Brightness, Auto-Lock, Never).
                   </div>
                 </div>
               )}

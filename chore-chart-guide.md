@@ -46,7 +46,7 @@ Tap the padlock to unlock. It automatically re-locks after **2 minutes of inacti
 - Joined devices can use everything in the app, including parent controls with the PIN, but only the owner can add or remove devices.
 
 ## Clock screen saver
-Under **Settings, Screen saver** you can turn on a big clock that appears after 5, 10 or 30 minutes with no taps. It's set per device, so turn it on for a wall tablet and leave phones alone. Tap anywhere to come back. On an iPad, set Auto-Lock to Never so the screen stays on.
+Under **Settings, Screen saver** you can turn on a big clock that appears after 5, 10 or 30 minutes with no taps. It's set per device, so turn it on for a wall tablet and leave phones alone. Tap anywhere to come back. Right below it, **Keep this screen on** stops the screen from switching off while the chart is open (Android tablets, phones and computers; if a device can't do it, the switch says so). Otherwise set the tablet's own screen timeout as long as it goes; on an iPad, Auto-Lock to Never.
 
 ## Weather
 The date card in the top corner shows the weather and takes its color: orange when sunny, gray when cloudy, blue for rain, purple-gray for storms, icy blue for snow, and midnight navy from sunset to sunrise. Set the place under **Settings, Household, Weather**: type a city, or a ZIP or postal code, and pick the right match. It works worldwide. It's shared by every device in the household, so changing it on one device changes it on all of them. The app never asks any device for its location. **Turn weather off** hides it, and the card goes back to pink and purple. There's a °F / °C switch there too.

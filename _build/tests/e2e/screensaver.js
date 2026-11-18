@@ -32,6 +32,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await ctx.exposeFunction("__be", (op, a) => be.rpc(op, a));
   await ctx.addInitScript(fakeFirebase);
   await ctx.addInitScript(() => { window.__ccScreensaverMsForTests = 2000; });
+  // A stand-in for the browser's Screen Wake Lock, recording what the app asks for.
+  await ctx.addInitScript(() => {
+    window.__wake = { requests: 0, held: null };
+    Object.defineProperty(navigator, "wakeLock", { configurable: true, value: {
+      request: function (type) {
+        window.__wake.requests++;
+        const listeners = [];
+        const lock = { type, released: false,
+          addEventListener: function (ev, fn) { if (ev === "release") listeners.push(fn); },
+          release: function () { if (!lock.released) { lock.released = true; listeners.forEach((f) => f()); } return Promise.resolve(); } };
+        window.__wake.held = lock;
+        return Promise.resolve(lock);
+      } } });
+  });
   // The screensaver is off by default; most checks below run with it switched on for this device.
   await ctx.route("**/*", (route) => {
     const url = route.request().url();
@@ -77,11 +91,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.click('#cc-settings button:text-is("Screen saver")');
   await sleep(3000);
   check("the clock doesn't start while Settings is open", !(await page.isVisible(ss)));
-  await page.click('#cc-settings button[role="switch"]');
+  await page.click('#cc-settings button[aria-label="Clock screen saver on this device"]');
   check("the wait-time choices appear once it's on", await page.isVisible('#cc-settings button:text-is("10 min")'));
   await page.click('#cc-settings button:text-is("5 min")');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("cc-screensaver") || "null"));
   check("the choice is remembered on this device", saved && saved.on === true && saved.minutes === 5, JSON.stringify(saved));
+  check("'Keep this screen on' is off by default and asks for nothing", (await page.getAttribute('#cc-keep-awake button[role="switch"]', "aria-checked")) === "false" && (await page.evaluate(() => window.__wake.requests)) === 0);
+  await page.click('#cc-keep-awake button[role="switch"]');
+  await sleep(300);
+  check("turning it on asks the browser to keep the screen on", (await page.evaluate(() => window.__wake.requests)) === 1 && (await page.evaluate(() => window.__wake.held && !window.__wake.held.released)));
+  check("...says so", (await page.textContent("#cc-keep-awake")).includes("won't switch off"));
+  check("...and is remembered on this device", (await page.evaluate(() => localStorage.getItem("cc-keep-awake"))) === "1");
+  await page.evaluate(() => window.__wake.held.release()); // the system lets go (e.g. the app was hidden)
+  await sleep(1500);
+  check("if the system lets go, it asks again", (await page.evaluate(() => window.__wake.requests)) === 2 && (await page.evaluate(() => !window.__wake.held.released)));
+  await page.click('#cc-keep-awake button[role="switch"]');
+  await sleep(300);
+  check("turning it off lets the screen sleep again", (await page.evaluate(() => window.__wake.held.released)) && (await page.evaluate(() => localStorage.getItem("cc-keep-awake"))) === "0");
   await page.screenshot({ path: path.join(os.tmpdir(), "settings-screensaver.png") });
   await page.keyboard.press("Escape");
   await page.waitForSelector("#cc-settings", { state: "detached" });
