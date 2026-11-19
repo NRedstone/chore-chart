@@ -260,9 +260,48 @@ function formatShortDate(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// A "YYYY-MM-DD" date from a date picker, as local midnight. (new Date("2026-12-20")
+// reads it as UTC midnight, which is the evening before in the Americas.)
+function parseLocalDate(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(dateStr);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function localDateKey(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
 function formatLongDate(dateStr) {
   if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString(undefined, { month: "long", day: "numeric" });
+  return parseLocalDate(dateStr).toLocaleDateString(undefined, { month: "long", day: "numeric" });
+}
+
+function formatShortDate(dateStr) {
+  if (!dateStr) return "";
+  return parseLocalDate(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Recurring chores can have a last day ("endDate", inclusive). After it, the
+// chore leaves the chart and stops counting, and waits in Settings > Kids >
+// Ended chores, where it can be restarted.
+function isRecurringChore(c) {
+  return c.category === "AM" || c.category === "PM" || c.category === "BONUS" || (c.category === "ANY" && c.freq !== "once");
+}
+function formEndDateInvalid(form) {
+  return !!form.endDate && isRecurringChore({ category: form.category, freq: form.freq }) && form.endDate < localDateKey(new Date());
+}
+function endDateFromNow(days, months) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (months) d.setMonth(d.getMonth() + months);
+  if (days) d.setDate(d.getDate() + days);
+  return localDateKey(d);
+}
+function choreEnded(c) {
+  return !!c.endDate && isRecurringChore(c) && localDateKey(new Date()) > c.endDate;
 }
 
 // Firestore doesn't guarantee object key order survives a round-trip, so
@@ -451,6 +490,7 @@ function resolveDays(c) {
 }
 
 function choreStatus(c, carriesOver) {
+  if (choreEnded(c)) return { done: true, overdue: false, applicable: false, ended: true };
   // Bonus chores use the same day picker as Morning/Evening — hidden entirely
   // on days they don't apply, resetting fresh each day they do. Still never
   // overdue and never blocking, no matter how long one sits unchecked.
@@ -491,7 +531,7 @@ function choreStatus(c, carriesOver) {
     if (c.dueDate) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const due = new Date(c.dueDate);
+      const due = parseLocalDate(c.dueDate);
       const daysUntilDue = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       return { done: false, overdue: today > due, applicable: true, daysUntilDue };
     }
@@ -567,7 +607,7 @@ const STARTER_CHORES = [
   { id: "14", name: "Set the table", kidId: "k2", category: "BONUS", freq: 1, points: 1, lastDone: null, streak: 0 },
 ];
 
-const emptyForm = (defaultKidId) => ({ name: "", kidId: defaultKidId || "", kidIds: defaultKidId ? [defaultKidId] : [], category: "AM", freq: 1, dueDay: 4, dueDate: "", points: 0, days: [0, 1, 2, 3, 4, 5, 6] });
+const emptyForm = (defaultKidId) => ({ name: "", kidId: defaultKidId || "", kidIds: defaultKidId ? [defaultKidId] : [], category: "AM", freq: 1, dueDay: 4, dueDate: "", endDate: "", points: 0, days: [0, 1, 2, 3, 4, 5, 6] });
 
 const defaultReward = () => ({ points: 0, lastPunchDate: null, history: [], log: [] });
 
@@ -688,6 +728,7 @@ export default function ChoreTracker() {
   const [newRewardName, setNewRewardName] = useState("");
   const [newRewardCost, setNewRewardCost] = useState(3);
   const [confirmDeleteKidId, setConfirmDeleteKidId] = useState(null);
+  const [confirmDeleteEndedId, setConfirmDeleteEndedId] = useState(null);
   const [avatarPickerKidId, setAvatarPickerKidId] = useState(null);
   const [deletedKidSnapshot, setDeletedKidSnapshot] = useState(null);
   const [draggedChoreId, setDraggedChoreId] = useState(null);
@@ -1333,8 +1374,8 @@ export default function ChoreTracker() {
     const today = todayKey();
     const nextRewards = { ...rewards };
     kids.forEach((kid) => {
-      const kidChores = chores.filter((c) => c.kidId === kid.id && c.category !== "BOOK" && c.category !== "BONUS");
-      const kidBonusChores = chores.filter((c) => c.kidId === kid.id && c.category === "BONUS");
+      const kidChores = chores.filter((c) => c.kidId === kid.id && c.category !== "BOOK" && c.category !== "BONUS" && !choreEnded(c));
+      const kidBonusChores = chores.filter((c) => c.kidId === kid.id && c.category === "BONUS" && !choreEnded(c));
       if (kidChores.length === 0 && kidBonusChores.length === 0) return;
 
       const choreSnapshots = kidChores.map((c) => {
@@ -1648,9 +1689,17 @@ export default function ChoreTracker() {
       dueDate: c.dueDate || "",
       points: typeof c.points === "number" ? c.points : 0, // no points set = it pays 0; editing must not change that
       days: c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? resolveDays(c) : [0, 1, 2, 3, 4, 5, 6],
+      endDate: c.endDate || "",
     });
     setEditingId(c.id);
     setShowForm(true);
+  }
+
+  // From Settings > Kids > Ended chores: open the chore in the form with
+  // "Ends" set back to Never, ready for new days or a new last day.
+  function restartChore(c) {
+    setSettingsTab(null);
+    startEdit({ ...c, endDate: null });
   }
 
   function cancelForm() {
@@ -1665,6 +1714,7 @@ export default function ChoreTracker() {
     if (!form.name.trim()) return null;
     if (form.category === "ANY" && form.freq !== "once" && form.dueDay === null) return null;
     if ((form.category === "AM" || form.category === "PM" || form.category === "BONUS") && (!form.days || form.days.length === 0)) return null;
+    if (formEndDateInvalid(form)) return null;
 
     let payload;
     if (form.category === "ANY") {
@@ -1691,7 +1741,8 @@ export default function ChoreTracker() {
       const amPmPoints = Math.max(0, Number(form.points) || 0);
       payload = { freq: 1, dueDay: null, dueDate: null, points: amPmPoints, days: form.days || ALL_DAYS };
     }
-    return { name: form.name.trim(), category: form.category, ...payload };
+    const recurring = isRecurringChore({ category: form.category, freq: payload.freq });
+    return { name: form.name.trim(), category: form.category, ...payload, endDate: recurring && form.endDate ? form.endDate : null };
   }
 
   function saveChore(e) {
@@ -2670,6 +2721,73 @@ export default function ChoreTracker() {
               </button>
             </div>
 
+            {(() => {
+              const ended = chores
+                .filter((c) => choreEnded(c) && kids.some((k) => k.id === c.kidId))
+                .sort((a, b) => (a.endDate < b.endDate ? 1 : a.endDate > b.endDate ? -1 : 0));
+              if (ended.length === 0) return null;
+              return (
+                <div id="cc-ended-chores" style={{ marginTop: 20, paddingTop: 16, borderTop: "1.5px solid #F1EDFF" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#7B61FF" }}>Ended chores</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2 }}>Kept so you can bring them back. Past days stay in each kid's history.</div>
+                  {ended.map((c) => {
+                    const kid = kids.find((k) => k.id === c.kidId);
+                    const cat = CATEGORIES.find((x) => x.id === c.category);
+                    const confirming = confirmDeleteEndedId === c.id;
+                    return (
+                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #F6F3FF" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14.5, fontWeight: 700, color: "#2B2250" }}>{c.name}</div>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: "#A79ED1" }}>
+                            {kid ? kid.name : ""} · {cat ? cat.label : ""} · ended {formatShortDate(c.endDate)}
+                          </div>
+                        </div>
+                        {confirming ? (
+                          <>
+                            <button
+                              className="cc-btn"
+                              onClick={() => {
+                                removeChore(c.id);
+                                setConfirmDeleteEndedId(null);
+                              }}
+                              style={{ padding: "7px 12px", borderRadius: 999, border: "none", background: "#C0392B", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}
+                            >
+                              Delete for good
+                            </button>
+                            <button
+                              className="cc-btn"
+                              onClick={() => setConfirmDeleteEndedId(null)}
+                              style={{ padding: "7px 12px", borderRadius: 999, border: "2px solid #E2DBFA", background: "#FFFFFF", color: "#5D5490", fontSize: 13, fontWeight: 800, cursor: "pointer" }}
+                            >
+                              Keep
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className="cc-btn"
+                              onClick={() => restartChore(c)}
+                              style={{ padding: "7px 12px", borderRadius: 999, border: "2px solid #E2DBFA", background: "#FFFFFF", color: "#5B45E0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}
+                            >
+                              Restart…
+                            </button>
+                            <button
+                              className="cc-btn"
+                              onClick={() => setConfirmDeleteEndedId(c.id)}
+                              aria-label={`Delete ${c.name} for good`}
+                              style={{ border: "none", background: "none", color: "#C9C0EE", cursor: "pointer", padding: 6, flexShrink: 0 }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
                 </>
               )}
 
@@ -3231,6 +3349,70 @@ export default function ChoreTracker() {
                     />
                   </div>
                 )}
+
+                {isRecurringChore({ category: form.category, freq: form.freq }) && (
+                  <div id="cc-chore-ends" style={{ padding: "12px 14px", borderRadius: 16, background: "#F8F6FE", border: "2px solid #ECE6FD" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13.5, color: "#8A82C0", fontWeight: 700 }}>Ends:</span>
+                      <div role="radiogroup" aria-label="Ends" style={{ display: "flex", padding: 3, borderRadius: 999, background: "#FFFFFF", border: "2px solid #E2DBFA" }}>
+                        {[
+                          { label: "Never", on: !form.endDate, pick: () => setForm({ ...form, endDate: "" }) },
+                          { label: "On a date", on: !!form.endDate, pick: () => setForm({ ...form, endDate: form.endDate || endDateFromNow(0, 1) }) },
+                        ].map((o) => (
+                          <button
+                            key={o.label}
+                            type="button"
+                            role="radio"
+                            aria-checked={o.on}
+                            onClick={o.pick}
+                            style={{ padding: "6px 14px", borderRadius: 999, border: "none", background: o.on ? "#2B2250" : "transparent", color: o.on ? "#FFFFFF" : "#6F66AD", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                      {form.endDate && (
+                        <input
+                          type="date"
+                          aria-label="Last day"
+                          value={form.endDate}
+                          min={localDateKey(new Date())}
+                          onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                          style={{ padding: "7px 10px", borderRadius: 10, border: `2px solid ${formEndDateInvalid(form) ? "#FF5A5F" : "#7B61FF"}`, fontSize: 13.5, fontWeight: 700, fontFamily: "inherit", color: "#2B2250", background: "#FFFFFF" }}
+                        />
+                      )}
+                    </div>
+                    {form.endDate && (
+                      <>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                          {[
+                            { label: "In 2 weeks", value: endDateFromNow(14, 0) },
+                            { label: "In 1 month", value: endDateFromNow(0, 1) },
+                            { label: "In 3 months", value: endDateFromNow(0, 3) },
+                          ].map((q) => (
+                            <button
+                              key={q.label}
+                              type="button"
+                              onClick={() => setForm({ ...form, endDate: q.value })}
+                              style={{ padding: "4px 11px", borderRadius: 999, border: `1.5px solid ${form.endDate === q.value ? "#7B61FF" : "#E2DBFA"}`, background: "#FFFFFF", color: form.endDate === q.value ? "#5B45E0" : "#8A82C0", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                            >
+                              {q.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: formEndDateInvalid(form) ? "#FF5A5F" : "#6F66AD", marginTop: 8, lineHeight: 1.45 }}>
+                          {formEndDateInvalid(form) ? (
+                            "That day has already passed. Pick today or later to save."
+                          ) : (
+                            <>
+                              Last day on the chart: <b style={{ color: "#2B2250" }}>{parseLocalDate(form.endDate).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</b>. After that it moves to <b style={{ color: "#2B2250" }}>Ended chores</b> in Settings, where you can restart it.
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <div style={{ fontSize: 12.5, color: "#8A82C0", marginTop: 12, fontWeight: 600 }}>
@@ -3242,7 +3424,7 @@ export default function ChoreTracker() {
 
         {/* Kid sections */}
         {visibleKids.map((kid) => {
-          const kidChores = chores.filter((c) => c.kidId === kid.id);
+          const kidChores = chores.filter((c) => c.kidId === kid.id && !choreEnded(c));
           const kidStatuses = kidChores.map((c) => {
             const cat = CATEGORIES.find((cat) => cat.id === c.category);
             return { c, cat, status: choreStatus(c, cat ? cat.carriesOver : false) };
@@ -3586,7 +3768,11 @@ export default function ChoreTracker() {
                           }
                           const dueDayLabel = typeof c.dueDay === "number" ? WEEKDAYS.find((d) => d.value === c.dueDay)?.label : null;
                           const dueDateLabel = c.dueDate ? formatLongDate(c.dueDate) : null;
-                          const dayListLabel = c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? formatDayList(resolveDays(c)) : null;
+                          const untilLabel = c.endDate && isRecurringChore(c) ? `until ${formatShortDate(c.endDate)}` : null;
+                          const dayListLabel =
+                            c.category === "AM" || c.category === "PM" || c.category === "BONUS"
+                              ? [formatDayList(resolveDays(c)) || (untilLabel ? "Every day" : null), untilLabel].filter(Boolean).join(" · ") || null
+                              : untilLabel;
                           const isDragging = draggedChoreId === c.id;
                           const isDragOver = dragOverChoreId === c.id && draggedChoreId && draggedChoreId !== c.id;
                           return (

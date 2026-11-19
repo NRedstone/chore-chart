@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-11-18 18:09 UTC"; window.__ccBuildId = "20261118-180909";</script>
+<script>window.__ccBuild = "2026-11-19 20:45 UTC"; window.__ccBuildId = "20261119-204542";</script>
 
 <script>
 // Three-way merge for saving the household.
@@ -2060,9 +2060,39 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     if (!dateStr) return "";
     return new Date(dateStr).toLocaleDateString(void 0, { month: "short", day: "numeric" });
   }
+  function parseLocalDate(dateStr) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(dateStr);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  function localDateKey(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
   function formatLongDate(dateStr) {
     if (!dateStr) return "";
-    return new Date(dateStr).toLocaleDateString(void 0, { month: "long", day: "numeric" });
+    return parseLocalDate(dateStr).toLocaleDateString(void 0, { month: "long", day: "numeric" });
+  }
+  function formatShortDate(dateStr) {
+    if (!dateStr) return "";
+    return parseLocalDate(dateStr).toLocaleDateString(void 0, { month: "short", day: "numeric" });
+  }
+  function isRecurringChore(c) {
+    return c.category === "AM" || c.category === "PM" || c.category === "BONUS" || c.category === "ANY" && c.freq !== "once";
+  }
+  function formEndDateInvalid(form) {
+    return !!form.endDate && isRecurringChore({ category: form.category, freq: form.freq }) && form.endDate < localDateKey(/* @__PURE__ */ new Date());
+  }
+  function endDateFromNow(days, months) {
+    const d = /* @__PURE__ */ new Date();
+    d.setHours(0, 0, 0, 0);
+    if (months) d.setMonth(d.getMonth() + months);
+    if (days) d.setDate(d.getDate() + days);
+    return localDateKey(d);
+  }
+  function choreEnded(c) {
+    return !!c.endDate && isRecurringChore(c) && localDateKey(/* @__PURE__ */ new Date()) > c.endDate;
   }
   function stableStringify(value) {
     if (Array.isArray(value)) return "[" + value.map(stableStringify).join(",") + "]";
@@ -2200,6 +2230,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     return ALL_DAYS;
   }
   function choreStatus(c, carriesOver) {
+    if (choreEnded(c)) return { done: true, overdue: false, applicable: false, ended: true };
     if (c.category === "BONUS") {
       const days = resolveDays(c);
       const today = /* @__PURE__ */ new Date();
@@ -2231,7 +2262,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       if (c.dueDate) {
         const today = /* @__PURE__ */ new Date();
         today.setHours(0, 0, 0, 0);
-        const due = new Date(c.dueDate);
+        const due = parseLocalDate(c.dueDate);
         const daysUntilDue = Math.round((due.getTime() - today.getTime()) / (1e3 * 60 * 60 * 24));
         return { done: false, overdue: today > due, applicable: true, daysUntilDue };
       }
@@ -2290,7 +2321,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     { id: "13", name: "Unload the dishwasher", kidId: "k1", category: "BONUS", freq: 1, points: 1, lastDone: null, streak: 0 },
     { id: "14", name: "Set the table", kidId: "k2", category: "BONUS", freq: 1, points: 1, lastDone: null, streak: 0 }
   ];
-  const emptyForm = (defaultKidId) => ({ name: "", kidId: defaultKidId || "", kidIds: defaultKidId ? [defaultKidId] : [], category: "AM", freq: 1, dueDay: 4, dueDate: "", points: 0, days: [0, 1, 2, 3, 4, 5, 6] });
+  const emptyForm = (defaultKidId) => ({ name: "", kidId: defaultKidId || "", kidIds: defaultKidId ? [defaultKidId] : [], category: "AM", freq: 1, dueDay: 4, dueDate: "", endDate: "", points: 0, days: [0, 1, 2, 3, 4, 5, 6] });
   const defaultReward = () => ({ points: 0, lastPunchDate: null, history: [], log: [] });
   function ChoreTracker() {
     const [kids, setKids] = useState(null);
@@ -2394,6 +2425,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
     const [newRewardName, setNewRewardName] = useState("");
     const [newRewardCost, setNewRewardCost] = useState(3);
     const [confirmDeleteKidId, setConfirmDeleteKidId] = useState(null);
+    const [confirmDeleteEndedId, setConfirmDeleteEndedId] = useState(null);
     const [avatarPickerKidId, setAvatarPickerKidId] = useState(null);
     const [deletedKidSnapshot, setDeletedKidSnapshot] = useState(null);
     const [draggedChoreId, setDraggedChoreId] = useState(null);
@@ -2923,8 +2955,8 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       const nextRewards = { ...rewards };
       kids.forEach((kid) => {
         var _a, _b;
-        const kidChores = chores.filter((c) => c.kidId === kid.id && c.category !== "BOOK" && c.category !== "BONUS");
-        const kidBonusChores = chores.filter((c) => c.kidId === kid.id && c.category === "BONUS");
+        const kidChores = chores.filter((c) => c.kidId === kid.id && c.category !== "BOOK" && c.category !== "BONUS" && !choreEnded(c));
+        const kidBonusChores = chores.filter((c) => c.kidId === kid.id && c.category === "BONUS" && !choreEnded(c));
         if (kidChores.length === 0 && kidBonusChores.length === 0) return;
         const choreSnapshots = kidChores.map((c) => {
           const cat = CATEGORIES.find((cat2) => cat2.id === c.category);
@@ -3156,10 +3188,15 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         dueDate: c.dueDate || "",
         points: typeof c.points === "number" ? c.points : 0,
         // no points set = it pays 0; editing must not change that
-        days: c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? resolveDays(c) : [0, 1, 2, 3, 4, 5, 6]
+        days: c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? resolveDays(c) : [0, 1, 2, 3, 4, 5, 6],
+        endDate: c.endDate || ""
       });
       setEditingId(c.id);
       setShowForm(true);
+    }
+    function restartChore(c) {
+      setSettingsTab(null);
+      startEdit({ ...c, endDate: null });
     }
     function cancelForm() {
       setShowForm(false);
@@ -3170,6 +3207,7 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
       if (!form.name.trim()) return null;
       if (form.category === "ANY" && form.freq !== "once" && form.dueDay === null) return null;
       if ((form.category === "AM" || form.category === "PM" || form.category === "BONUS") && (!form.days || form.days.length === 0)) return null;
+      if (formEndDateInvalid(form)) return null;
       let payload;
       if (form.category === "ANY") {
         const anyPoints = Math.max(0, Number(form.points) || 0);
@@ -3186,7 +3224,8 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
         const amPmPoints = Math.max(0, Number(form.points) || 0);
         payload = { freq: 1, dueDay: null, dueDate: null, points: amPmPoints, days: form.days || ALL_DAYS };
       }
-      return { name: form.name.trim(), category: form.category, ...payload };
+      const recurring = isRecurringChore({ category: form.category, freq: payload.freq });
+      return { name: form.name.trim(), category: form.category, ...payload, endDate: recurring && form.endDate ? form.endDate : null };
     }
     function saveChore(e) {
       e.preventDefault();
@@ -3988,7 +4027,52 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
           },
           /* @__PURE__ */ React.createElement(Plus, { size: 15 }),
           "Add kid"
-        ))),
+        )), (() => {
+          const ended = chores.filter((c) => choreEnded(c) && kids.some((k) => k.id === c.kidId)).sort((a, b) => a.endDate < b.endDate ? 1 : a.endDate > b.endDate ? -1 : 0);
+          if (ended.length === 0) return null;
+          return /* @__PURE__ */ React.createElement("div", { id: "cc-ended-chores", style: { marginTop: 20, paddingTop: 16, borderTop: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 800, color: "#7B61FF" } }, "Ended chores"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: "#8A82C0", marginTop: 2 } }, "Kept so you can bring them back. Past days stay in each kid's history."), ended.map((c) => {
+            const kid = kids.find((k) => k.id === c.kidId);
+            const cat = CATEGORIES.find((x) => x.id === c.category);
+            const confirming = confirmDeleteEndedId === c.id;
+            return /* @__PURE__ */ React.createElement("div", { key: c.id, style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #F6F3FF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 0 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14.5, fontWeight: 700, color: "#2B2250" } }, c.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: "#A79ED1" } }, kid ? kid.name : "", " \xB7 ", cat ? cat.label : "", " \xB7 ended ", formatShortDate(c.endDate))), confirming ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
+              "button",
+              {
+                className: "cc-btn",
+                onClick: () => {
+                  removeChore(c.id);
+                  setConfirmDeleteEndedId(null);
+                },
+                style: { padding: "7px 12px", borderRadius: 999, border: "none", background: "#C0392B", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }
+              },
+              "Delete for good"
+            ), /* @__PURE__ */ React.createElement(
+              "button",
+              {
+                className: "cc-btn",
+                onClick: () => setConfirmDeleteEndedId(null),
+                style: { padding: "7px 12px", borderRadius: 999, border: "2px solid #E2DBFA", background: "#FFFFFF", color: "#5D5490", fontSize: 13, fontWeight: 800, cursor: "pointer" }
+              },
+              "Keep"
+            )) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
+              "button",
+              {
+                className: "cc-btn",
+                onClick: () => restartChore(c),
+                style: { padding: "7px 12px", borderRadius: 999, border: "2px solid #E2DBFA", background: "#FFFFFF", color: "#5B45E0", fontSize: 13, fontWeight: 800, cursor: "pointer" }
+              },
+              "Restart\u2026"
+            ), /* @__PURE__ */ React.createElement(
+              "button",
+              {
+                className: "cc-btn",
+                onClick: () => setConfirmDeleteEndedId(c.id),
+                "aria-label": `Delete ${c.name} for good`,
+                style: { border: "none", background: "none", color: "#C9C0EE", cursor: "pointer", padding: 6, flexShrink: 0 }
+              },
+              /* @__PURE__ */ React.createElement(Trash2, { size: 16 })
+            )));
+          }));
+        })()),
         settingsTab === "rewards" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, paddingBottom: 16, marginBottom: 16, borderBottom: "1.5px solid #F1EDFF" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: "#7B61FF" } }, "Daily completion value"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: "#8A82C0", fontWeight: 600 } }, "Bonus for a fully clear day \u2014 Morning, Evening, and Anytime chores all done. Any of those chores can also carry their own point value, editable when adding or editing it \u2014 this bonus is separate and always applies on top.")), /* @__PURE__ */ React.createElement(
           "input",
           {
@@ -4354,11 +4438,48 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
               onChange: (e) => setForm({ ...form, dueDate: e.target.value }),
               style: { padding: "8px 12px", borderRadius: 10, border: "2px solid #E2DBFA", fontSize: 13.5, fontFamily: "inherit" }
             }
-          ))),
+          )), isRecurringChore({ category: form.category, freq: form.freq }) && /* @__PURE__ */ React.createElement("div", { id: "cc-chore-ends", style: { padding: "12px 14px", borderRadius: 16, background: "#F8F6FE", border: "2px solid #ECE6FD" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13.5, color: "#8A82C0", fontWeight: 700 } }, "Ends:"), /* @__PURE__ */ React.createElement("div", { role: "radiogroup", "aria-label": "Ends", style: { display: "flex", padding: 3, borderRadius: 999, background: "#FFFFFF", border: "2px solid #E2DBFA" } }, [
+            { label: "Never", on: !form.endDate, pick: () => setForm({ ...form, endDate: "" }) },
+            { label: "On a date", on: !!form.endDate, pick: () => setForm({ ...form, endDate: form.endDate || endDateFromNow(0, 1) }) }
+          ].map((o) => /* @__PURE__ */ React.createElement(
+            "button",
+            {
+              key: o.label,
+              type: "button",
+              role: "radio",
+              "aria-checked": o.on,
+              onClick: o.pick,
+              style: { padding: "6px 14px", borderRadius: 999, border: "none", background: o.on ? "#2B2250" : "transparent", color: o.on ? "#FFFFFF" : "#6F66AD", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }
+            },
+            o.label
+          ))), form.endDate && /* @__PURE__ */ React.createElement(
+            "input",
+            {
+              type: "date",
+              "aria-label": "Last day",
+              value: form.endDate,
+              min: localDateKey(/* @__PURE__ */ new Date()),
+              onChange: (e) => setForm({ ...form, endDate: e.target.value }),
+              style: { padding: "7px 10px", borderRadius: 10, border: `2px solid ${formEndDateInvalid(form) ? "#FF5A5F" : "#7B61FF"}`, fontSize: 13.5, fontWeight: 700, fontFamily: "inherit", color: "#2B2250", background: "#FFFFFF" }
+            }
+          )), form.endDate && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 } }, [
+            { label: "In 2 weeks", value: endDateFromNow(14, 0) },
+            { label: "In 1 month", value: endDateFromNow(0, 1) },
+            { label: "In 3 months", value: endDateFromNow(0, 3) }
+          ].map((q) => /* @__PURE__ */ React.createElement(
+            "button",
+            {
+              key: q.label,
+              type: "button",
+              onClick: () => setForm({ ...form, endDate: q.value }),
+              style: { padding: "4px 11px", borderRadius: 999, border: `1.5px solid ${form.endDate === q.value ? "#7B61FF" : "#E2DBFA"}`, background: "#FFFFFF", color: form.endDate === q.value ? "#5B45E0" : "#8A82C0", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }
+            },
+            q.label
+          ))), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, fontWeight: 600, color: formEndDateInvalid(form) ? "#FF5A5F" : "#6F66AD", marginTop: 8, lineHeight: 1.45 } }, formEndDateInvalid(form) ? "That day has already passed. Pick today or later to save." : /* @__PURE__ */ React.createElement(React.Fragment, null, "Last day on the chart: ", /* @__PURE__ */ React.createElement("b", { style: { color: "#2B2250" } }, parseLocalDate(form.endDate).toLocaleDateString(void 0, { weekday: "long", month: "long", day: "numeric" })), ". After that it moves to ", /* @__PURE__ */ React.createElement("b", { style: { color: "#2B2250" } }, "Ended chores"), " in Settings, where you can restart it."))))),
           /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, color: "#8A82C0", marginTop: 12, fontWeight: 600 } }, "Morning, evening, and bonus chores reset fresh on whatever days you pick, and simply don't appear on the days you don't. Weekly anytime chores don't block the point until their due day passes undone. One-time chores stay checked once completed. Books and bonus chores never block anything \u2014 they just pay out their own points the moment they're checked off.")
         )
       ), visibleKids.map((kid) => {
-        const kidChores = chores.filter((c) => c.kidId === kid.id);
+        const kidChores = chores.filter((c) => c.kidId === kid.id && !choreEnded(c));
         const kidStatuses = kidChores.map((c) => {
           const cat = CATEGORIES.find((cat2) => cat2.id === c.category);
           return { c, cat, status: choreStatus(c, cat ? cat.carriesOver : false) };
@@ -4652,7 +4773,8 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
             }
             const dueDayLabel = typeof c.dueDay === "number" ? (_a = WEEKDAYS.find((d) => d.value === c.dueDay)) == null ? void 0 : _a.label : null;
             const dueDateLabel = c.dueDate ? formatLongDate(c.dueDate) : null;
-            const dayListLabel = c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? formatDayList(resolveDays(c)) : null;
+            const untilLabel = c.endDate && isRecurringChore(c) ? `until ${formatShortDate(c.endDate)}` : null;
+            const dayListLabel = c.category === "AM" || c.category === "PM" || c.category === "BONUS" ? [formatDayList(resolveDays(c)) || (untilLabel ? "Every day" : null), untilLabel].filter(Boolean).join(" \xB7 ") || null : untilLabel;
             const isDragging = draggedChoreId === c.id;
             const isDragOver = dragOverChoreId === c.id && draggedChoreId && draggedChoreId !== c.id;
             return /* @__PURE__ */ React.createElement(
