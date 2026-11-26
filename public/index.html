@@ -26,7 +26,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-functions-compat.js"></script>
 
-<script>window.__ccBuild = "2026-11-19 20:45 UTC"; window.__ccBuildId = "20261119-204542";</script>
+<script>window.__ccBuild = "2026-11-26 19:35 UTC"; window.__ccBuildId = "20261126-193523";</script>
 
 <script>
 // Three-way merge for saving the household.
@@ -2081,6 +2081,11 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
   function isRecurringChore(c) {
     return c.category === "AM" || c.category === "PM" || c.category === "BONUS" || c.category === "ANY" && c.freq !== "once";
   }
+  function pointsOr(value, fallback) {
+    if (value === "" || value === null || value === void 0) return fallback;
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, n) : fallback;
+  }
   function formEndDateInvalid(form) {
     return !!form.endDate && isRecurringChore({ category: form.category, freq: form.freq }) && form.endDate < localDateKey(/* @__PURE__ */ new Date());
   }
@@ -3217,9 +3222,9 @@ if (!window.__ccDemo) window.__syncReady = (async () => {
           payload = { freq: 7, dueDay: Number(form.dueDay), dueDate: null, points: anyPoints, days: null };
         }
       } else if (form.category === "BOOK") {
-        payload = { freq: "once", dueDay: null, dueDate: null, points: Math.max(0, Number(form.points) || 3), days: null };
+        payload = { freq: "once", dueDay: null, dueDate: null, points: pointsOr(form.points, 3), days: null };
       } else if (form.category === "BONUS") {
-        payload = { freq: 1, dueDay: null, dueDate: null, points: Math.max(0, Number(form.points) || 1), days: form.days || ALL_DAYS };
+        payload = { freq: 1, dueDay: null, dueDate: null, points: pointsOr(form.points, 1), days: form.days || ALL_DAYS };
       } else {
         const amPmPoints = Math.max(0, Number(form.points) || 0);
         payload = { freq: 1, dueDay: null, dueDate: null, points: amPmPoints, days: form.days || ALL_DAYS };

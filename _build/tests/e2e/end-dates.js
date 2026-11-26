@@ -142,6 +142,22 @@ const check = (name, cond, extra) => results.push({ name, ok: !!cond, extra });
   await sleep(300);
   check("Books don't offer an end date", !(await page.isVisible("#cc-chore-ends")));
 
+  // 6. Bonus (and Book) chores can be worth 0 points
+  await page.selectOption('[role="dialog"] select:has(option[value="BONUS"])', "BONUS");
+  await page.fill('[role="dialog"] input[placeholder]:not([type="date"])', "Feed the fish");
+  await page.fill('[role="dialog"] input[aria-label="Points"], [role="dialog"] input[type="number"]', "0");
+  await page.click('[role="dialog"] button:text-is("Add")');
+  await sleep(800);
+  const fish = (doc().chores || []).find((c) => c.name === "Feed the fish");
+  check("a Bonus chore saves at 0 points", fish && fish.category === "BONUS" && fish.points === 0, JSON.stringify(fish));
+  await row("Feed the fish").locator('button[aria-label="Edit chore"]').click();
+  await page.waitForSelector('[role="dialog"]');
+  check("...and edits as 0, not 1", (await page.inputValue('[role="dialog"] input[aria-label="Points"], [role="dialog"] input[type="number"]')) === "0");
+  await page.fill('[role="dialog"] input[aria-label="Points"], [role="dialog"] input[type="number"]', "");
+  await page.click('button:text-is("Save changes")');
+  await sleep(800);
+  check("a blank points box still means the usual 1", (doc().chores.find((c) => c.name === "Feed the fish") || {}).points === 1);
+
   results.forEach((r) => console.log((r.ok ? "  ok   " : "  FAIL ") + r.name + (r.ok || !r.extra ? "" : "   [" + String(r.extra).slice(0, 200) + "]")));
   console.log(results.length + " checks, " + results.filter((r) => !r.ok).length + " failed; page errors: " + (errors.length ? errors.join(" | ") : "none"));
   await browser.close();

@@ -290,6 +290,14 @@ function formatShortDate(dateStr) {
 function isRecurringChore(c) {
   return c.category === "AM" || c.category === "PM" || c.category === "BONUS" || (c.category === "ANY" && c.freq !== "once");
 }
+// A points box: 0 is a real choice (a bonus chore just for the checkmark);
+// only a blank or unreadable box falls back to the default.
+function pointsOr(value, fallback) {
+  if (value === "" || value === null || value === undefined) return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, n) : fallback;
+}
+
 function formEndDateInvalid(form) {
   return !!form.endDate && isRecurringChore({ category: form.category, freq: form.freq }) && form.endDate < localDateKey(new Date());
 }
@@ -1734,9 +1742,9 @@ export default function ChoreTracker() {
         payload = { freq: 7, dueDay: Number(form.dueDay), dueDate: null, points: anyPoints, days: null };
       }
     } else if (form.category === "BOOK") {
-      payload = { freq: "once", dueDay: null, dueDate: null, points: Math.max(0, Number(form.points) || 3), days: null };
+      payload = { freq: "once", dueDay: null, dueDate: null, points: pointsOr(form.points, 3), days: null };
     } else if (form.category === "BONUS") {
-      payload = { freq: 1, dueDay: null, dueDate: null, points: Math.max(0, Number(form.points) || 1), days: form.days || ALL_DAYS };
+      payload = { freq: 1, dueDay: null, dueDate: null, points: pointsOr(form.points, 1), days: form.days || ALL_DAYS };
     } else {
       const amPmPoints = Math.max(0, Number(form.points) || 0);
       payload = { freq: 1, dueDay: null, dueDate: null, points: amPmPoints, days: form.days || ALL_DAYS };
